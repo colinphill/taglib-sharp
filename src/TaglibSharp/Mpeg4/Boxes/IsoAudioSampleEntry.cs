@@ -163,7 +163,7 @@ namespace TagLib.Mpeg4
 		///    A <see cref="string" /> object containing a description
 		///    of the media represented by the current instance.
 		/// </value>
-		public string Description {
+		public virtual string Description {
 			get {
 				return string.Format (CultureInfo.InvariantCulture, "MPEG-4 Audio ({0})", BoxType);
 			}
@@ -177,7 +177,7 @@ namespace TagLib.Mpeg4
 		///    A <see cref="int" /> value containing a bitrate of the
 		///    audio represented by the current instance.
 		/// </value>
-		public int AudioBitrate {
+		public virtual int AudioBitrate {
 			get {
 				// If we don't have an stream descriptor, we
 				// don't know what's what.
@@ -197,7 +197,7 @@ namespace TagLib.Mpeg4
 		///    A <see cref="int" /> value containing the sample rate of
 		///    the audio represented by the current instance.
 		/// </value>
-		public int AudioSampleRate {
+		public virtual int AudioSampleRate {
 			get { return (int)(sample_rate >> 16); }
 		}
 
@@ -210,7 +210,7 @@ namespace TagLib.Mpeg4
 		///    channels in the audio represented by the current
 		///    instance.
 		/// </value>
-		public int AudioChannels {
+		public virtual int AudioChannels {
 			get { return channel_count; }
 		}
 

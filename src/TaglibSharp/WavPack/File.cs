@@ -216,7 +216,10 @@ namespace TagLib.WavPack
 				return;
 
 			Seek (start);
-			header_block = ReadBlock ((int)StreamHeader.Size);
+			// Read enough data to cover the block header and any leading metadata
+			// subblocks. 1 KB is sufficient for all practical WavPack files;
+			// StreamHeader will internally cap parsing at the declared block boundary.
+			header_block = ReadBlock (1024);
 		}
 
 		/// <summary>

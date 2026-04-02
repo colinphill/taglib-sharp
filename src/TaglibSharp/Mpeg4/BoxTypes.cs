@@ -42,6 +42,7 @@ namespace TagLib.Mpeg4
 	static class BoxType
 	{
 		public static readonly ReadOnlyByteVector Aart = "aART";
+		public static readonly ReadOnlyByteVector Alac = "alac";
 		public static readonly ReadOnlyByteVector Alb = AppleTag.FixId ("alb");
 		public static readonly ReadOnlyByteVector Art = AppleTag.FixId ("ART");
 		public static readonly ReadOnlyByteVector Cmt = AppleTag.FixId ("cmt");

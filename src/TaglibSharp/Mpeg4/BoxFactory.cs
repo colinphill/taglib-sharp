@@ -66,8 +66,11 @@ namespace TagLib.Mpeg4
 			if (parent.BoxType == BoxType.Stsd &&
 				parent.Box is IsoSampleDescriptionBox &&
 				index < (parent.Box as IsoSampleDescriptionBox).EntryCount) {
-				if (handler != null && handler.HandlerType == BoxType.Soun)
+				if (handler != null && handler.HandlerType == BoxType.Soun) {
+					if (header.BoxType == BoxType.Alac)
+						return new IsoAudioSampleEntryAlac (header, file, handler);
 					return new IsoAudioSampleEntry (header, file, handler);
+				}
 
 				if (handler != null && handler.HandlerType == BoxType.Vide)
 					return new IsoVisualSampleEntry (header, file, handler);

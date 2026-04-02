@@ -11,8 +11,8 @@
 		<RepositoryUrl>https://github.com/mono/taglib-sharp</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 
-		<ExeTargetFrameworks>net472;net8.0;net9.0</ExeTargetFrameworks>
-		<LibTargetFrameworks>netstandard2.0;net8.0;net9.0</LibTargetFrameworks>
+		<ExeTargetFrameworks>net8.0;net9.0;net10.0</ExeTargetFrameworks>
+		<LibTargetFrameworks>net8.0;net9.0;net10.0</LibTargetFrameworks>
 		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<ImplicitUsings>true</ImplicitUsings>
 		<EnableNETAnalyzers>true</EnableNETAnalyzers>

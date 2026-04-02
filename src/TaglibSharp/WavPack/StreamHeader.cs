@@ -50,6 +50,21 @@ namespace TagLib.WavPack
 		const int SRATE_LSB = 23;
 		const long SRATE_MASK = (0xfL << SRATE_LSB);
 
+		/// <summary>
+		///    SRATE field value that signals the sample rate is stored in a
+		///    subblock rather than the flags table.
+		/// </summary>
+		const int SRATE_EXTENDED = 15;
+
+		// Subblock metadata IDs (after stripping flag bits).
+		const byte ID_CHANNEL_INFO = 0x0d;
+		const byte ID_DSD_BLOCK    = 0x0e;
+		const byte ID_SAMPLE_RATE  = 0x27; // ID_OPTIONAL_DATA | 0x07
+
+		// Subblock header flag bits.
+		const byte SB_LARGE    = 0x80;
+		const byte SB_ODD_SIZE = 0x40;
+
 		#endregion
 
 
@@ -74,7 +89,24 @@ namespace TagLib.WavPack
 		/// <summary>
 		///    Contains the sample count.
 		/// </summary>
-		readonly uint samples;
+		readonly ulong samples;
+
+		/// <summary>
+		///    Contains the extended sample rate from the ID_SAMPLE_RATE
+		///    subblock, or 0 if not present.
+		/// </summary>
+		readonly int extended_sample_rate;
+
+		/// <summary>
+		///    Contains the channel count from the ID_CHANNEL_INFO subblock,
+		///    or 0 if not present.
+		/// </summary>
+		readonly int extended_channels;
+
+		/// <summary>
+		///    Indicates whether the block contains a DSD subblock.
+		/// </summary>
+		readonly bool is_dsd;
 
 		#endregion
 
@@ -136,6 +168,24 @@ namespace TagLib.WavPack
 			version = data.Mid (8, 2).ToUShort (false);
 			flags = data.Mid (24, 4).ToUInt (false);
 			samples = data.Mid (12, 4).ToUInt (false);
+
+			// ckSize is the total block size minus 8; cap subblock scanning
+			// at the declared block boundary so we never stray into a
+			// subsequent block when the caller provides more data than one block.
+			uint ck_size = data.Mid (4, 4).ToUInt (false);
+			int block_end = (int)Math.Min ((long)ck_size + 8, data.Count);
+			int dsdshift;
+
+			ParseSubblocks (data, block_end,
+				out extended_sample_rate,
+				out extended_channels,
+				out is_dsd,
+				out dsdshift);
+
+			if (is_dsd) {
+				samples <<= 3;
+				extended_sample_rate <<= 3 + dsdshift;
+			}
 		}
 
 		#endregion
@@ -180,7 +230,9 @@ namespace TagLib.WavPack
 		/// </value>
 		public string Description {
 			get {
-				return string.Format (CultureInfo.InvariantCulture, "WavPack Version {0} Audio", Version);
+				return string.Format (CultureInfo.InvariantCulture,
+					is_dsd ? "WavPack Version {0} Audio (DSD)" : "WavPack Version {0} Audio",
+					Version);
 			}
 		}
 
@@ -208,7 +260,8 @@ namespace TagLib.WavPack
 		/// </value>
 		public int AudioSampleRate {
 			get {
-				return (int)(sample_rates[(flags & SRATE_MASK) >> SRATE_LSB]);
+				int index = (int)((flags & SRATE_MASK) >> SRATE_LSB);
+				return index == SRATE_EXTENDED ? extended_sample_rate : (int)sample_rates[index];
 			}
 		}
 
@@ -222,7 +275,11 @@ namespace TagLib.WavPack
 		///    instance.
 		/// </value>
 		public int AudioChannels {
-			get { return ((flags & MONO_FLAG) != 0) ? 1 : 2; }
+			get {
+				if (extended_channels > 0)
+					return extended_channels;
+				return ((flags & MONO_FLAG) != 0) ? 1 : 2;
+			}
 		}
 
 		/// <summary>
@@ -248,7 +305,114 @@ namespace TagLib.WavPack
 		/// </value>
 		public int BitsPerSample {
 			get {
-				return (int)(((flags & BYTES_STORED) + 1) * 8 - ((flags & SHIFT_MASK) >> SHIFT_LSB));
+				return is_dsd ? 1 : (int)(((flags & BYTES_STORED) + 1) * 8 - ((flags & SHIFT_MASK) >> SHIFT_LSB));
+			}
+		}
+
+		/// <summary>
+		///    Gets whether the audio represented by the current instance is
+		///    DSD (Direct Stream Digital) encoded.
+		/// </summary>
+		/// <value>
+		///    <see langword="true" /> if a DSD subblock was found in the first
+		///    WavPack block; otherwise <see langword="false" />.
+		/// </value>
+		public bool IsDsd {
+			get { return is_dsd; }
+		}
+
+		#endregion
+
+
+
+		#region Private Static Methods
+
+		/// <summary>
+		///    Scans WavPack subblocks in <paramref name="data" /> from offset
+		///    <see cref="Size" /> up to <paramref name="blockEnd" />, extracting
+		///    extended sample rate, channel count, and DSD flag.
+		/// </summary>
+		/// <param name="data">
+		///    The raw block data including the 32-byte block header.
+		/// </param>
+		/// <param name="blockEnd">
+		///    The byte offset at which the current block ends within
+		///    <paramref name="data" />.
+		/// </param>
+		/// <param name="extSampleRate">
+		///    On return, the sample rate from the ID_SAMPLE_RATE subblock,
+		///    or 0 if not present.
+		/// </param>
+		/// <param name="extChannels">
+		///    On return, the channel count from the ID_CHANNEL_INFO subblock,
+		///    or 0 if not present.
+		/// </param>
+		/// <param name="isDsd">
+		///    On return, <see langword="true" /> if an ID_DSD_BLOCK subblock
+		///    was found.
+		/// <param name="dsdShift">
+		///    On return, the DSD shift value from the ID_DSD_BLOCK subblock,
+		///    or 0 if not present.
+		/// </param>
+		/// </param>
+		static void ParseSubblocks (ByteVector data, int blockEnd,
+			out int extSampleRate, out int extChannels, out bool isDsd, out int dsdShift)
+		{
+			extSampleRate = 0;
+			extChannels = 0;
+			isDsd = false;
+			dsdShift = 0;
+
+			int offset = (int)Size; // subblocks begin immediately after the header
+
+			while (offset + 2 <= blockEnd) {
+				byte idByte   = data[offset++];
+				byte sizeByte = data[offset++];
+
+				// The stored size is a word count; disk bytes = word_count << 1.
+				int diskBytes = sizeByte << 1;
+
+				if ((idByte & SB_LARGE) != 0) {
+					// Large subblock: two more size bytes extend the word count.
+					if (offset + 2 > blockEnd)
+						break;
+					diskBytes |= data[offset++] << 9;
+					diskBytes |= data[offset++] << 17;
+					idByte = (byte)(idByte & ~SB_LARGE);
+				}
+
+				// ODD_SIZE means the final byte on disk is padding; actual data
+				// is one byte shorter than the disk-aligned count.
+				int dataBytes = diskBytes;
+				if ((idByte & SB_ODD_SIZE) != 0) {
+					idByte = (byte)(idByte & ~SB_ODD_SIZE);
+					dataBytes--;
+				}
+
+				if (offset + diskBytes > blockEnd)
+					break;
+
+				switch (idByte) {
+				case ID_SAMPLE_RATE:
+					// 3-byte little-endian sample rate.
+					if (dataBytes >= 3)
+						extSampleRate = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16);
+					break;
+
+				case ID_CHANNEL_INFO:
+					// Byte 0 is the channel count (covers up to 255 channels).
+					if (dataBytes >= 1)
+						extChannels = data[offset];
+					break;
+
+				case ID_DSD_BLOCK:
+					isDsd = true;
+					if (dataBytes >= 1)
+						dsdShift = data[offset] & 0x1f; // shift is stored in the low 5 bits
+					break;
+				}
+
+				offset += diskBytes;
 			}
 		}
 
