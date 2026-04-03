@@ -623,7 +623,8 @@ namespace TagLib.Id3v2
 
 				try {
 					tag_data.Add (frame.Render (header.MajorVersion));
-				} catch (NotImplementedException) {
+				} catch (NotSupportedException) {
+					// Skip frames using unsupported features (e.g. compression, encryption).
 				}
 			}
 
@@ -923,7 +924,8 @@ namespace TagLib.Id3v2
 
 				try {
 					frame = FrameFactory.CreateFrame (data, file, ref frame_data_position, header.MajorVersion, fullTagUnsynch);
-				} catch (NotImplementedException) {
+				} catch (NotSupportedException) {
+					// Skip frames using unsupported features (e.g. compression, encryption).
 					continue;
 				} catch (CorruptFileException) {
 					throw;

@@ -213,7 +213,7 @@ namespace TagLib.Id3v2
 				{
 					frame = FrameFactory.CreateFrame(data, null, ref position, version, true /* ? */);
 				}
-				catch (NotImplementedException)
+				catch (NotSupportedException)
 				{
 					continue;
 				}

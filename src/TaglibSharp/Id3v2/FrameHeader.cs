@@ -250,19 +250,15 @@ namespace TagLib.Id3v2
 		///    A bitwise combined <see cref="HeaderFlags" /> value
 		///    containing the flags applied to the current instance.
 		/// </value>
-		/// <exception cref="ArgumentException">
-		///    <paramref name="value" /> contains a either compression
-		///    or encryption, neither of which are supported by the
-		///    library.
-		/// </exception>
+		/// <remarks>
+		///    Frames with <see cref="FrameFlags.Compression" /> or
+		///    <see cref="FrameFlags.Encryption" /> flags set can be
+		///    stored in this header, but attempting to read or render
+		///    such frames will throw <see cref="NotSupportedException" />.
+		/// </remarks>
 		public FrameFlags Flags {
 			get { return flags; }
-			set {
-				if ((value & (FrameFlags.Compression | FrameFlags.Encryption)) != 0)
-					throw new ArgumentException ("Encryption and compression are not supported.", nameof (value));
-
-				flags = value;
-			}
+			set { flags = value; }
 		}
 
 		#endregion
@@ -281,9 +277,9 @@ namespace TagLib.Id3v2
 		///    A <see cref="ByteVector" /> object containing the
 		///    rendered version of the current instance.
 		/// </returns>
-		/// <exception cref="NotImplementedException">
-		///    The version specified in the current instance is
-		///    unsupported.
+		/// <exception cref="NotSupportedException">
+		///    The version specified in <paramref name="version" /> is
+		///    not supported.
 		/// </exception>
 		public ByteVector Render (byte version)
 		{
@@ -291,7 +287,7 @@ namespace TagLib.Id3v2
 			ByteVector id = ConvertId (frame_id, version, true);
 
 			if (id == null)
-				throw new NotImplementedException ();
+				throw new NotSupportedException ($"Frame ID cannot be converted to ID3v2 version {version}.");
 
 			switch (version) {
 			case 2:
@@ -320,7 +316,7 @@ namespace TagLib.Id3v2
 				return data;
 
 			default:
-				throw new NotImplementedException ("Unsupported tag version.");
+				throw new NotSupportedException ($"Unsupported ID3v2 version: {version}.");
 			}
 		}
 

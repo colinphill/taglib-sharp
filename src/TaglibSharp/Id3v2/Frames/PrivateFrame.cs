@@ -360,14 +360,14 @@ namespace TagLib.Id3v2
 		///    A <see cref="ByteVector" /> object containing the
 		///    rendered field data.
 		/// </returns>
-		/// <exception cref="NotImplementedException">
+		/// <exception cref="NotSupportedException">
 		///    <paramref name="version" /> is less than 3. ID3v2.2 does
 		///    not support this frame.
 		/// </exception>
 		protected override ByteVector RenderFields (byte version)
 		{
 			if (version < 3)
-				throw new NotImplementedException ();
+				throw new NotSupportedException ("PRIV frames are not supported in ID3v2.2.");
 
 			var v = new ByteVector {
 				ByteVector.FromString (Owner, StringType.Latin1),

@@ -30,6 +30,7 @@
 
 using System.Globalization;
 using System.Runtime.ExceptionServices;
+using System.Threading.Tasks;
 
 namespace TagLib
 {
@@ -1318,16 +1319,141 @@ namespace TagLib
 				file.MimeType = mimetype;
 				return file;
 			} catch (System.Reflection.TargetInvocationException e) {
-#if NETSTANDARD2_0
-				// .NET Standard 2.0: Stack trace will be lost when rethrowing inner exception.
-				// This is a limitation of .NET Standard 2.0.
-				throw e.InnerException;
-#else
-				// Modern .NET: preserve stack trace
 				ExceptionDispatchInfo.Capture (e.InnerException).Throw ();
 				throw; // Unreachable, but required for compiler
-#endif
 			}
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified path, using the average read style.
+		/// </summary>
+		/// <param name="path">
+		///    A <see cref="string" /> object specifying the file to read from
+		///    and write to.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified path.
+		/// </returns>
+		public static Task<File> CreateAsync (string path)
+		{
+			return Task.Run (() => Create (path));
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified file abstraction, using the average
+		///    read style.
+		/// </summary>
+		/// <param name="abstraction">
+		///    A <see cref="IFileAbstraction" /> object to use when reading
+		///    to and writing from the current instance.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified abstraction.
+		/// </returns>
+		public static Task<File> CreateAsync (IFileAbstraction abstraction)
+		{
+			return Task.Run (() => Create (abstraction));
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified path and read style.
+		/// </summary>
+		/// <param name="path">
+		///    A <see cref="string" /> object specifying the file to read from
+		///    and write to.
+		/// </param>
+		/// <param name="propertiesStyle">
+		///    A <see cref="ReadStyle" /> value specifying the level of detail
+		///    to use when reading the media information from the new instance.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified path.
+		/// </returns>
+		public static Task<File> CreateAsync (string path, ReadStyle propertiesStyle)
+		{
+			return Task.Run (() => Create (path, propertiesStyle));
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified file abstraction and read style.
+		/// </summary>
+		/// <param name="abstraction">
+		///    A <see cref="IFileAbstraction" /> object to use when reading
+		///    to and writing from the current instance.
+		/// </param>
+		/// <param name="propertiesStyle">
+		///    A <see cref="ReadStyle" /> value specifying the level of detail
+		///    to use when reading the media information from the new instance.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified abstraction.
+		/// </returns>
+		public static Task<File> CreateAsync (IFileAbstraction abstraction, ReadStyle propertiesStyle)
+		{
+			return Task.Run (() => Create (abstraction, propertiesStyle));
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified path, mime-type, and read style.
+		/// </summary>
+		/// <param name="path">
+		///    A <see cref="string" /> object specifying the file to read from
+		///    and write to.
+		/// </param>
+		/// <param name="mimetype">
+		///    A <see cref="string" /> object containing the mime-type to use
+		///    when selecting the appropriate class to use, or <see
+		///    langword="null" /> if the extension in <paramref name="path" />
+		///    is to be used.
+		/// </param>
+		/// <param name="propertiesStyle">
+		///    A <see cref="ReadStyle" /> value specifying the level of detail
+		///    to use when reading the media information from the new instance.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified path.
+		/// </returns>
+		public static Task<File> CreateAsync (string path, string mimetype, ReadStyle propertiesStyle)
+		{
+			return Task.Run (() => Create (path, mimetype, propertiesStyle));
+		}
+
+		/// <summary>
+		///    Asynchronously creates a new instance of a <see cref="File" />
+		///    subclass for a specified file abstraction, mime-type, and read
+		///    style.
+		/// </summary>
+		/// <param name="abstraction">
+		///    A <see cref="IFileAbstraction" /> object to use when reading
+		///    to and writing from the current instance.
+		/// </param>
+		/// <param name="mimetype">
+		///    A <see cref="string" /> object containing the mime-type to use
+		///    when selecting the appropriate class to use, or <see
+		///    langword="null" /> if the extension in <paramref
+		///    name="abstraction" /> is to be used.
+		/// </param>
+		/// <param name="propertiesStyle">
+		///    A <see cref="ReadStyle" /> value specifying the level of detail
+		///    to use when reading the media information from the new instance.
+		/// </param>
+		/// <returns>
+		///    A <see cref="Task{File}" /> that resolves to a new instance of
+		///    <see cref="File" /> as read from the specified abstraction.
+		/// </returns>
+		public static Task<File> CreateAsync (IFileAbstraction abstraction, string mimetype, ReadStyle propertiesStyle)
+		{
+			return Task.Run (() => Create (abstraction, mimetype, propertiesStyle));
 		}
 
 		/// <summary>

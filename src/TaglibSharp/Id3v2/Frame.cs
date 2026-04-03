@@ -228,11 +228,9 @@ namespace TagLib.Id3v2
 		///    A <see cref="ByteVector" /> object containing the
 		///    rendered version of the current instance.
 		/// </returns>
-		/// <exception cref="NotImplementedException">
-		///    The current instance uses some feature that cannot be
-		///    implemented in the specified ID3v2 version, or uses a
-		///    feature, such as encryption or compression, which is not
-		///    yet implemented in the library.
+		/// <exception cref="NotSupportedException">
+		///    The current instance uses ID3v2 frame compression or
+		///    encryption, which are not supported by this library.
 		/// </exception>
 		public virtual ByteVector Render (byte version)
 		{
@@ -270,13 +268,11 @@ namespace TagLib.Id3v2
 			if ((Flags & FrameFlags.Encryption) != 0)
 				front_data.Add (encryption_id);
 
-			// FIXME: Implement compression.
 			if ((Flags & FrameFlags.Compression) != 0)
-				throw new NotImplementedException ("Compression not yet supported");
+				throw new NotSupportedException ("ID3v2 frame compression is not supported.");
 
-			// FIXME: Implement encryption.
 			if ((Flags & FrameFlags.Encryption) != 0)
-				throw new NotImplementedException ("Encryption not yet supported");
+				throw new NotSupportedException ("ID3v2 frame encryption is not supported.");
 
 			if ((Flags & FrameFlags.Unsynchronisation) != 0)
 				SynchData.UnsynchByteVector (field_data);
@@ -469,24 +465,11 @@ namespace TagLib.Id3v2
 				data_length -= (data.Count - before_length);
 			}
 
-			// FIXME: Implement encryption.
 			if ((Flags & FrameFlags.Encryption) != 0)
-				throw new NotImplementedException ();
+				throw new NotSupportedException ("ID3v2 frame encryption is not supported.");
 
-			// FIXME: Implement compression.
 			if ((Flags & FrameFlags.Compression) != 0)
-				throw new NotImplementedException ();
-			/*
-			if(d->header->compression()) {
-				ByteVector data(frameDataLength);
-				uLongf uLongTmp = frameDataLength;
-				::uncompress((Bytef *) data.data(),
-				(uLongf *) &uLongTmp,
-				(Bytef *) frameData.data() + frameDataOffset,
-				size());
-				return data;
-			}
-			*/
+				throw new NotSupportedException ("ID3v2 frame compression is not supported.");
 
 			return data;
 		}

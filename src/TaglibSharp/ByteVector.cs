@@ -29,6 +29,7 @@
 //
 
 using System;
+using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -188,9 +189,62 @@ namespace TagLib
 		#region Private Fields
 
 		/// <summary>
-		///    Contains the internal byte list.
+		///    Contains the raw byte storage.
 		/// </summary>
-		readonly List<byte> data = new List<byte> ();
+		byte[] _data = Array.Empty<byte> ();
+
+		/// <summary>
+		///    Contains the number of valid bytes in <see cref="_data"/>.
+		/// </summary>
+		int _count;
+
+		#endregion
+
+
+
+		#region Private Helpers
+
+		/// <summary>
+		///    Ensures <see cref="_data"/> has capacity for at least
+		///    <paramref name="required"/> bytes, growing with a
+		///    doubling strategy.
+		/// </summary>
+		void EnsureCapacity (int required)
+		{
+			if (required <= _data.Length)
+				return;
+
+			int newCap = _data.Length == 0
+				? Math.Max (4, required)
+				: Math.Max (_data.Length * 2, required);
+
+			var newData = new byte[newCap];
+			_data.AsSpan (0, _count).CopyTo (newData);
+			_data = newData;
+		}
+
+		/// <summary>
+		///    Appends <paramref name="span"/> to the end of the buffer.
+		/// </summary>
+		void AppendSpan (ReadOnlySpan<byte> span)
+		{
+			EnsureCapacity (_count + span.Length);
+			span.CopyTo (_data.AsSpan (_count));
+			_count += span.Length;
+		}
+
+		/// <summary>
+		///    Inserts <paramref name="span"/> at <paramref name="index"/>,
+		///    shifting existing content right.
+		/// </summary>
+		void InsertSpan (int index, ReadOnlySpan<byte> span)
+		{
+			EnsureCapacity (_count + span.Length);
+			_data.AsSpan (index, _count - index)
+			     .CopyTo (_data.AsSpan (index + span.Length));
+			span.CopyTo (_data.AsSpan (index));
+			_count += span.Length;
+		}
 
 		#endregion
 
@@ -218,7 +272,7 @@ namespace TagLib
 		public ByteVector (ByteVector vector)
 		{
 			if (vector != null)
-				data.AddRange (vector);
+				AppendSpan (vector.AsSpan ());
 		}
 
 		/// <summary>
@@ -233,9 +287,8 @@ namespace TagLib
 		public ByteVector (params byte[] data)
 		{
 			if (data != null)
-				this.data.AddRange (data);
+				AppendSpan (data);
 		}
-
 
 		/// <summary>
 		///    Constructs and initializes a new instance of <see
@@ -262,13 +315,7 @@ namespace TagLib
 			if (length < 0)
 				throw new ArgumentOutOfRangeException (nameof (length), "Length is less than zero.");
 
-			if (length == data.Length) {
-				this.data.AddRange (data);
-			} else {
-				byte[] array = new byte[length];
-				Array.Copy (data, 0, array, 0, length);
-				this.data.AddRange (array);
-			}
+			AppendSpan (data.AsSpan (0, length));
 		}
 
 		/// <summary>
@@ -317,12 +364,11 @@ namespace TagLib
 			if (size == 0)
 				return;
 
-			byte[] data = new byte[size];
+			_data = new byte[size];
+			_count = size;
 
-			for (int i = 0; i < size; i++)
-				data[i] = value;
-
-			this.data.AddRange (data);
+			if (value != 0)
+				_data.AsSpan ().Fill (value);
 		}
 
 		#endregion
@@ -339,7 +385,7 @@ namespace TagLib
 		///    current instance.
 		/// </value>
 		public byte[] Data {
-			get { return data.ToArray (); }
+			get { return AsSpan ().ToArray (); }
 		}
 
 		/// <summary>
@@ -350,7 +396,7 @@ namespace TagLib
 		///    current instance is empty.
 		/// </value>
 		public bool IsEmpty {
-			get { return data.Count == 0; }
+			get { return _count == 0; }
 		}
 
 		/// <summary>
@@ -363,11 +409,8 @@ namespace TagLib
 		public uint Checksum {
 			get {
 				uint sum = 0;
-
-				foreach (byte b in data)
-					sum = (sum << 8) ^ crc_table
-						[((sum >> 24) & 0xFF) ^ b];
-
+				foreach (byte b in AsSpan ())
+					sum = (sum << 8) ^ crc_table[((sum >> 24) & 0xFF) ^ b];
 				return sum;
 			}
 		}
@@ -409,6 +452,27 @@ namespace TagLib
 
 
 
+		#region Span Access
+
+		/// <summary>
+		///    Returns a <see cref="ReadOnlySpan{T}"/> over all bytes in
+		///    the current instance. Zero allocation.
+		/// </summary>
+		public ReadOnlySpan<byte> AsSpan () => _data.AsSpan (0, _count);
+
+		/// <summary>
+		///    Returns a <see cref="ReadOnlySpan{T}"/> over a slice of
+		///    the current instance. Zero allocation.
+		/// </summary>
+		/// <param name="start">Starting index.</param>
+		/// <param name="length">Number of bytes.</param>
+		public ReadOnlySpan<byte> AsSpan (int start, int length) =>
+			_data.AsSpan (start, length);
+
+		#endregion
+
+
+
 		#region Public Methods
 
 		/// <summary>
@@ -441,14 +505,10 @@ namespace TagLib
 			if (length == 0)
 				return new ByteVector ();
 
-			if (startIndex + length > this.data.Count)
-				length = this.data.Count - startIndex;
+			if (startIndex + length > _count)
+				length = _count - startIndex;
 
-			byte[] data = new byte[length];
-
-			this.data.CopyTo (startIndex, data, 0, length);
-
-			return data;
+			return new ByteVector (AsSpan (startIndex, length).ToArray ());
 		}
 
 		/// <summary>
@@ -515,14 +575,15 @@ namespace TagLib
 			if (pattern.Count > Count - offset)
 				return -1;
 
-			// Let's go ahead and special case a pattern of size one
-			// since that's common and easy to make fast.
-
+			// Special-case single byte: use SIMD-backed IndexOf when byte-aligned.
 			if (pattern.Count == 1) {
 				byte p = pattern[0];
-				for (int i = offset; i < data.Count;
-					i += byteAlign)
-					if (data[i] == p)
+				if (byteAlign == 1) {
+					int i = AsSpan (offset, _count - offset).IndexOf (p);
+					return i < 0 ? -1 : i + offset;
+				}
+				for (int i = offset; i < _count; i += byteAlign)
+					if (_data[i] == p)
 						return i;
 				return -1;
 			}
@@ -535,12 +596,12 @@ namespace TagLib
 				last_occurrence[pattern[i]] = pattern.Count - i - 1;
 
 			for (int i = pattern.Count - 1 + offset;
-				i < data.Count;
-				i += last_occurrence[data[i]]) {
+				i < _count;
+				i += last_occurrence[_data[i]]) {
 				int iBuffer = i;
 				int iPattern = pattern.Count - 1;
 
-				while (iPattern >= 0 && data[iBuffer] == pattern[iPattern]) {
+				while (iPattern >= 0 && _data[iBuffer] == pattern[iPattern]) {
 					--iBuffer;
 					--iPattern;
 				}
@@ -644,14 +705,15 @@ namespace TagLib
 			if (pattern.Count == 0 || pattern.Count > Count - offset)
 				return -1;
 
-			// Let's go ahead and special case a pattern of size one
-			// since that's common and easy to make fast.
-
+			// Special-case single byte: use SIMD-backed LastIndexOf when byte-aligned.
 			if (pattern.Count == 1) {
 				byte p = pattern[0];
-				for (int i = Count - offset - 1; i >= 0;
-					i -= byteAlign)
-					if (data[i] == p)
+				int searchLen = Count - offset;
+				if (byteAlign == 1) {
+					return AsSpan (0, searchLen).LastIndexOf (p);
+				}
+				for (int i = searchLen - 1; i >= 0; i -= byteAlign)
+					if (_data[i] == p)
 						return i;
 				return -1;
 			}
@@ -665,7 +727,7 @@ namespace TagLib
 				first_occurrence[pattern[i]] = i;
 
 			for (int i = Count - offset - pattern.Count; i >= 0;
-				i -= first_occurrence[data[i]])
+				i -= first_occurrence[_data[i]])
 				if ((offset - i) % byteAlign == 0 && ContainsAt (pattern, i))
 					return i;
 
@@ -753,24 +815,20 @@ namespace TagLib
 			if (pattern == null)
 				throw new ArgumentNullException (nameof (pattern));
 
-			if (pattern.Count < patternLength) {
+			if (pattern.Count < patternLength)
 				patternLength = pattern.Count;
-			}
 
-			// do some sanity checking -- all of these things are
-			// needed for the search to be valid
-			if (patternLength > data.Count ||
-				offset >= data.Count ||
+			int compareLen = patternLength - patternOffset;
+
+			if (compareLen <= 0 ||
+				offset < 0 ||
+				offset >= _count ||
 				patternOffset >= pattern.Count ||
-				patternLength <= 0 || offset < 0)
+				offset + compareLen > _count)
 				return false;
 
-			// loop through looking for a mismatch
-			for (int i = 0; i < patternLength - patternOffset; i++)
-				if (data[i + offset] != pattern[i + patternOffset])
-					return false;
-
-			return true;
+			return AsSpan (offset, compareLen)
+				.SequenceEqual (pattern.AsSpan (patternOffset, compareLen));
 		}
 
 		/// <summary>
@@ -867,7 +925,7 @@ namespace TagLib
 			if (pattern == null)
 				throw new ArgumentNullException (nameof (pattern));
 
-			return ContainsAt (pattern, data.Count - pattern.Count);
+			return ContainsAt (pattern, _count - pattern.Count);
 		}
 
 		/// <summary>
@@ -891,20 +949,18 @@ namespace TagLib
 			if (pattern == null)
 				throw new ArgumentNullException (nameof (pattern));
 
-			if (pattern.Count > data.Count) {
+			if (pattern.Count > _count)
 				return -1;
-			}
 
-			int start_index = data.Count - pattern.Count;
+			int start_index = _count - pattern.Count;
 
 			// try to match the last n-1 bytes from the vector
 			// (where n is the pattern size) -- continue trying to
 			// match n-2, n-3...1 bytes
 
 			for (int i = 1; i < pattern.Count; i++) {
-				if (ContainsAt (pattern, start_index + i, 0, pattern.Count - i)) {
+				if (ContainsAt (pattern, start_index + i, 0, pattern.Count - i))
 					return start_index + i;
-				}
 			}
 
 			return -1;
@@ -926,9 +982,8 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			if (data != null) {
-				this.data.AddRange (data);
-			}
+			if (data != null)
+				AppendSpan (data.AsSpan ());
 		}
 
 		/// <summary>
@@ -948,7 +1003,7 @@ namespace TagLib
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
 			if (data != null)
-				this.data.AddRange (data);
+				AppendSpan (data);
 		}
 
 		/// <summary>
@@ -972,7 +1027,7 @@ namespace TagLib
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
 			if (data != null)
-				this.data.InsertRange (index, data);
+				InsertSpan (index, data.AsSpan ());
 		}
 
 		/// <summary>
@@ -996,7 +1051,7 @@ namespace TagLib
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
 			if (data != null)
-				this.data.InsertRange (index, data);
+				InsertSpan (index, data);
 		}
 
 		/// <summary>
@@ -1021,11 +1076,13 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			if (data.Count > size)
-				data.RemoveRange (size, data.Count - size);
-
-			while (data.Count < size)
-				data.Add (padding);
+			if (_count > size) {
+				_count = size;
+			} else if (_count < size) {
+				EnsureCapacity (size);
+				_data.AsSpan (_count, size - _count).Fill (padding);
+				_count = size;
+			}
 
 			return this;
 		}
@@ -1073,7 +1130,9 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			data.RemoveRange (index, count);
+			_data.AsSpan (index + count, _count - index - count)
+			     .CopyTo (_data.AsSpan (index));
+			_count -= count;
 		}
 
 		#endregion
@@ -1098,16 +1157,13 @@ namespace TagLib
 		/// </returns>
 		public int ToInt (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 4 ? 3 : span.Length - 1;
 			int sum = 0;
-			int last = Count > 4 ? 3 : Count - 1;
-
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				unchecked {
-					sum |= this[i] << (offset * 8);
-				}
+				int shift = mostSignificantByteFirst ? last - i : i;
+				unchecked { sum |= span[i] << (shift * 8); }
 			}
-
 			return sum;
 		}
 
@@ -1125,6 +1181,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts four bytes at a specified offset to a
+		///    <see cref="int" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="int"/> value read from the specified offset.
+		/// </returns>
+		public int ToInt (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadInt32BigEndian (AsSpan (offset, 4))
+				: BinaryPrimitives.ReadInt32LittleEndian (AsSpan (offset, 4));
+
+		/// <summary>
 		///    Converts an first four bytes of the current instance to
 		///    a <see cref="uint" /> value.
 		/// </summary>
@@ -1140,14 +1216,13 @@ namespace TagLib
 		/// </returns>
 		public uint ToUInt (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 4 ? 3 : span.Length - 1;
 			uint sum = 0;
-			int last = Count > 4 ? 3 : Count - 1;
-
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				sum |= (uint)this[i] << (offset * 8);
+				int shift = mostSignificantByteFirst ? last - i : i;
+				sum |= (uint)span[i] << (shift * 8);
 			}
-
 			return sum;
 		}
 
@@ -1165,6 +1240,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts four bytes at a specified offset to a
+		///    <see cref="uint" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="uint"/> value read from the specified offset.
+		/// </returns>
+		public uint ToUInt (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadUInt32BigEndian (AsSpan (offset, 4))
+				: BinaryPrimitives.ReadUInt32LittleEndian (AsSpan (offset, 4));
+
+		/// <summary>
 		///    Converts an first two bytes of the current instance to a
 		///    <see cref="short" /> value.
 		/// </summary>
@@ -1180,15 +1275,13 @@ namespace TagLib
 		/// </returns>
 		public short ToShort (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 2 ? 1 : span.Length - 1;
 			short sum = 0;
-			int last = Count > 2 ? 1 : Count - 1;
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				unchecked {
-					sum |= (short)(this[i] << (offset * 8));
-				}
+				int shift = mostSignificantByteFirst ? last - i : i;
+				unchecked { sum |= (short)(span[i] << (shift * 8)); }
 			}
-
 			return sum;
 		}
 
@@ -1206,6 +1299,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts two bytes at a specified offset to a
+		///    <see cref="short" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="short"/> value read from the specified offset.
+		/// </returns>
+		public short ToShort (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadInt16BigEndian (AsSpan (offset, 2))
+				: BinaryPrimitives.ReadInt16LittleEndian (AsSpan (offset, 2));
+
+		/// <summary>
 		///    Converts an first two bytes of the current instance to a
 		///    <see cref="ushort" /> value.
 		/// </summary>
@@ -1221,13 +1334,13 @@ namespace TagLib
 		/// </returns>
 		public ushort ToUShort (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 2 ? 1 : span.Length - 1;
 			ushort sum = 0;
-			int last = Count > 2 ? 1 : Count - 1;
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				sum |= (ushort)(this[i] << (offset * 8));
+				int shift = mostSignificantByteFirst ? last - i : i;
+				sum |= (ushort)(span[i] << (shift * 8));
 			}
-
 			return sum;
 		}
 
@@ -1245,6 +1358,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts two bytes at a specified offset to a
+		///    <see cref="ushort" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="ushort"/> value read from the specified offset.
+		/// </returns>
+		public ushort ToUShort (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadUInt16BigEndian (AsSpan (offset, 2))
+				: BinaryPrimitives.ReadUInt16LittleEndian (AsSpan (offset, 2));
+
+		/// <summary>
 		///    Converts an first eight bytes of the current instance to
 		///    a <see cref="long" /> value.
 		/// </summary>
@@ -1260,13 +1393,12 @@ namespace TagLib
 		/// </returns>
 		public long ToLong (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 8 ? 7 : span.Length - 1;
 			long sum = 0;
-			int last = Count > 8 ? 7 : Count - 1;
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				unchecked {
-					sum |= (long)this[i] << (offset * 8);
-				}
+				int shift = mostSignificantByteFirst ? last - i : i;
+				unchecked { sum |= (long)span[i] << (shift * 8); }
 			}
 			return sum;
 		}
@@ -1285,6 +1417,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts eight bytes at a specified offset to a
+		///    <see cref="long" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="long"/> value read from the specified offset.
+		/// </returns>
+		public long ToLong (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadInt64BigEndian (AsSpan (offset, 8))
+				: BinaryPrimitives.ReadInt64LittleEndian (AsSpan (offset, 8));
+
+		/// <summary>
 		///    Converts an first eight bytes of the current instance to
 		///    a <see cref="ulong" /> value.
 		/// </summary>
@@ -1300,11 +1452,12 @@ namespace TagLib
 		/// </returns>
 		public ulong ToULong (bool mostSignificantByteFirst)
 		{
+			var span = AsSpan ();
+			int last = span.Length > 8 ? 7 : span.Length - 1;
 			ulong sum = 0;
-			int last = Count > 8 ? 7 : Count - 1;
 			for (int i = 0; i <= last; i++) {
-				int offset = mostSignificantByteFirst ? last - i : i;
-				sum |= (ulong)this[i] << (offset * 8);
+				int shift = mostSignificantByteFirst ? last - i : i;
+				sum |= (ulong)span[i] << (shift * 8);
 			}
 			return sum;
 		}
@@ -1323,6 +1476,26 @@ namespace TagLib
 		}
 
 		/// <summary>
+		///    Converts eight bytes at a specified offset to a
+		///    <see cref="ulong" /> value.
+		/// </summary>
+		/// <param name="offset">
+		///    A <see cref="int" /> value specifying the byte offset to
+		///    read from.
+		/// </param>
+		/// <param name="mostSignificantByteFirst">
+		///    <see langword="true" /> for big-endian, <see
+		///    langword="false" /> for little-endian.
+		/// </param>
+		/// <returns>
+		///    A <see cref="ulong"/> value read from the specified offset.
+		/// </returns>
+		public ulong ToULong (int offset, bool mostSignificantByteFirst = true) =>
+			mostSignificantByteFirst
+				? BinaryPrimitives.ReadUInt64BigEndian (AsSpan (offset, 8))
+				: BinaryPrimitives.ReadUInt64LittleEndian (AsSpan (offset, 8));
+
+		/// <summary>
 		///    Converts an first four bytes of the current instance to
 		///    a <see cref="float" /> value.
 		/// </summary>
@@ -1338,13 +1511,9 @@ namespace TagLib
 		/// </returns>
 		public float ToFloat (bool mostSignificantByteFirst)
 		{
-			byte[] bytes = (byte[])Data.Clone ();
-
-			if (mostSignificantByteFirst) {
-				Array.Reverse (bytes);
-			}
-
-			return BitConverter.ToSingle (bytes, 0);
+			return mostSignificantByteFirst
+				? BinaryPrimitives.ReadSingleBigEndian (AsSpan (0, 4))
+				: BinaryPrimitives.ReadSingleLittleEndian (AsSpan (0, 4));
 		}
 
 		/// <summary>
@@ -1376,13 +1545,9 @@ namespace TagLib
 		/// </returns>
 		public double ToDouble (bool mostSignificantByteFirst)
 		{
-			byte[] bytes = (byte[])Data.Clone ();
-
-			if (mostSignificantByteFirst) {
-				Array.Reverse (bytes);
-			}
-
-			return BitConverter.ToDouble (bytes, 0);
+			return mostSignificantByteFirst
+				? BinaryPrimitives.ReadDoubleBigEndian (AsSpan (0, 8))
+				: BinaryPrimitives.ReadDoubleLittleEndian (AsSpan (0, 8));
 		}
 
 		/// <summary>
@@ -1470,10 +1635,10 @@ namespace TagLib
 				throw new ArgumentOutOfRangeException (nameof (count));
 
 			var bom = type == StringType.UTF16 &&
-				data.Count - offset > 1 ? Mid (offset, 2) : null;
+				_count - offset > 1 ? Mid (offset, 2) : null;
 
 			string s = StringTypeToEncoding (type, bom)
-				.GetString (Data, offset, count);
+				.GetString (AsSpan (offset, count));
 
 			// UTF16 BOM
 			if (s.Length != 0 && (s[0] == 0xfffe || s[0] == 0xfeff))
@@ -1594,8 +1759,7 @@ namespace TagLib
 				if (chunk + 1 == count) {
 					position = offset + count;
 				} else {
-					position = Find (separator, start,
-						align);
+					position = Find (separator, start, align);
 
 					if (position < 0)
 						position = Count;
@@ -1606,12 +1770,9 @@ namespace TagLib
 				if (length == 0) {
 					list.Add (string.Empty);
 				} else {
-					string s = ToString (type, start,
-						length);
-					if (s.Length != 0 && (s[0] == 0xfffe ||
-						s[0] == 0xfeff)) { // UTF16 BOM
+					string s = ToString (type, start, length);
+					if (s.Length != 0 && (s[0] == 0xfffe || s[0] == 0xfeff))
 						s = s.Substring (1);
-					}
 
 					list.Add (s);
 				}
@@ -1890,13 +2051,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromInt (int value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 4; i++) {
-				int offset = mostSignificantByteFirst ? 3 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-
-			return vector;
+			var bytes = new byte[4];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteInt32BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteInt32LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -1932,13 +2092,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromUInt (uint value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 4; i++) {
-				int offset = mostSignificantByteFirst ? 3 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-
-			return vector;
+			var bytes = new byte[4];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteUInt32BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteUInt32LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -1975,13 +2134,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromShort (short value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 2; i++) {
-				int offset = mostSignificantByteFirst ? 1 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-
-			return vector;
+			var bytes = new byte[2];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteInt16BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteInt16LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -2017,13 +2175,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromUShort (ushort value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 2; i++) {
-				int offset = mostSignificantByteFirst ? 1 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-
-			return vector;
+			var bytes = new byte[2];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteUInt16BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteUInt16LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -2060,12 +2217,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromLong (long value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 8; i++) {
-				int offset = mostSignificantByteFirst ? 7 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-			return vector;
+			var bytes = new byte[8];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteInt64BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteInt64LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -2101,12 +2258,12 @@ namespace TagLib
 		/// </returns>
 		public static ByteVector FromULong (ulong value, bool mostSignificantByteFirst)
 		{
-			var vector = new ByteVector ();
-			for (int i = 0; i < 8; i++) {
-				int offset = mostSignificantByteFirst ? 7 - i : i;
-				vector.Add ((byte)(value >> (offset * 8) & 0xFF));
-			}
-			return vector;
+			var bytes = new byte[8];
+			if (mostSignificantByteFirst)
+				BinaryPrimitives.WriteUInt64BigEndian (bytes, value);
+			else
+				BinaryPrimitives.WriteUInt64LittleEndian (bytes, value);
+			return new ByteVector (bytes);
 		}
 
 		/// <summary>
@@ -2307,7 +2464,7 @@ namespace TagLib
 		/// </param>
 		/// <param name="copyFirstChunk">
 		///    A <see cref="bool"/> value specifying whether or not to
-		///    copy the first chunk of the file into <paramref
+		///    copy the first chunk of the stream into <paramref
 		///    name="firstChunk" />.
 		/// </param>
 		/// <returns>
@@ -2384,19 +2541,15 @@ namespace TagLib
 			firstChunk = null;
 
 			while (true) {
-				Array.Clear (bytes, 0, bytes.Length);
 				int n = stream.Read (bytes, 0, read_size);
-				vector.Add (bytes);
+				if (n > 0)
+					vector.AppendSpan (bytes.AsSpan (0, n));
 				bytes_read += n;
 
 				if (!set_first_chunk) {
 					if (copyFirstChunk) {
-						if (firstChunk == null ||
-							firstChunk.Length != read_size) {
-							firstChunk = new byte[read_size];
-						}
-
-						Array.Copy (bytes, 0, firstChunk, 0, n);
+						firstChunk = new byte[read_size];
+						bytes.AsSpan (0, n).CopyTo (firstChunk);
 					}
 					set_first_chunk = true;
 				}
@@ -2589,11 +2742,10 @@ namespace TagLib
 				throw new ArgumentNullException (nameof (other));
 
 			int diff = Count - other.Count;
+			if (diff != 0)
+				return diff;
 
-			for (int i = 0; diff == 0 && i < Count; i++)
-				diff = this[i] - other[i];
-
-			return diff;
+			return AsSpan ().SequenceCompareTo (other.AsSpan ());
 		}
 
 		#endregion
@@ -2612,12 +2764,13 @@ namespace TagLib
 		/// </returns>
 		public IEnumerator<byte> GetEnumerator ()
 		{
-			return data.GetEnumerator ();
+			for (int i = 0; i < _count; i++)
+				yield return _data[i];
 		}
 
 		IEnumerator IEnumerable.GetEnumerator ()
 		{
-			return data.GetEnumerator ();
+			return GetEnumerator ();
 		}
 
 		#endregion
@@ -2637,7 +2790,7 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			data.Clear ();
+			_count = 0;
 		}
 
 		/// <summary>
@@ -2654,7 +2807,8 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			data.Add (item);
+			EnsureCapacity (_count + 1);
+			_data[_count++] = item;
 		}
 
 		/// <summary>
@@ -2677,7 +2831,12 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			return data.Remove (item);
+			int i = AsSpan ().IndexOf (item);
+			if (i < 0)
+				return false;
+
+			RemoveRange (i, 1);
+			return true;
 		}
 
 		/// <summary>
@@ -2693,7 +2852,7 @@ namespace TagLib
 		/// </param>
 		public void CopyTo (byte[] array, int arrayIndex)
 		{
-			data.CopyTo (array, arrayIndex);
+			AsSpan ().CopyTo (array.AsSpan (arrayIndex));
 		}
 
 		/// <summary>
@@ -2710,7 +2869,7 @@ namespace TagLib
 		/// </returns>
 		public bool Contains (byte item)
 		{
-			return data.Contains (item);
+			return AsSpan ().Contains (item);
 		}
 
 		/// <summary>
@@ -2721,7 +2880,7 @@ namespace TagLib
 		///    in the current instance.
 		/// </value>
 		public int Count {
-			get { return data.Count; }
+			get { return _count; }
 		}
 
 		/// <summary>
@@ -2767,7 +2926,7 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			data.RemoveAt (index);
+			RemoveRange (index, 1);
 		}
 
 		/// <summary>
@@ -2790,7 +2949,10 @@ namespace TagLib
 			if (IsReadOnly)
 				throw new NotSupportedException ("Cannot edit readonly objects.");
 
-			data.Insert (index, item);
+			EnsureCapacity (_count + 1);
+			_data.AsSpan (index, _count - index).CopyTo (_data.AsSpan (index + 1));
+			_data[index] = item;
+			_count++;
 		}
 
 		/// <summary>
@@ -2805,7 +2967,7 @@ namespace TagLib
 		/// </returns>
 		public int IndexOf (byte item)
 		{
-			return data.IndexOf (item);
+			return AsSpan ().IndexOf (item);
 		}
 
 		/// <summary>
@@ -2838,12 +3000,12 @@ namespace TagLib
 		///    The current instance is read-only.
 		/// </exception>
 		public byte this[int index] {
-			get { return data[index]; }
+			get { return _data[index]; }
 			set {
 				if (IsReadOnly)
 					throw new NotSupportedException ("Cannot edit readonly objects.");
 
-				data[index] = value;
+				_data[index] = value;
 			}
 		}
 
