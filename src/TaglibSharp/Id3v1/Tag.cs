@@ -26,6 +26,7 @@
 //
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace TagLib.Id3v1
@@ -458,6 +459,85 @@ namespace TagLib.Id3v1
 			title = artist = album = year = comment = null;
 			track = 0;
 			genre = 255;
+		}
+
+		#endregion
+
+
+
+		#region Field API (GetField / SetField / RemoveField / GetAllFields)
+
+		static readonly HashSet<string> SupportedFields = new HashSet<string> {
+			TagFieldNames.Title,
+			TagFieldNames.Performers,
+			TagFieldNames.Album,
+			TagFieldNames.Comment,
+			TagFieldNames.Genres,
+			TagFieldNames.Year,
+			TagFieldNames.Track,
+		};
+
+		/// <summary>
+		///    Returns all values for a named field. Only the fields supported
+		///    by ID3v1 (<see cref="TagFieldNames.Title" />, <see
+		///    cref="TagFieldNames.Performers" />, <see
+		///    cref="TagFieldNames.Album" />, <see
+		///    cref="TagFieldNames.Comment" />, <see
+		///    cref="TagFieldNames.Genres" />, <see
+		///    cref="TagFieldNames.Year" />, <see
+		///    cref="TagFieldNames.Track" />) are accessible; all others
+		///    return an empty array.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			if (SupportedFields.Contains (name))
+				return base.GetField (name);
+			return Array.Empty<string> ();
+		}
+
+		/// <summary>
+		///    Sets the named field. Only fields supported by ID3v1 may be
+		///    set; attempting to set any other field throws <see
+		///    cref="NotSupportedException" />.
+		/// </summary>
+		/// <exception cref="NotSupportedException">
+		///    <paramref name="name" /> is not a field supported by the
+		///    ID3v1 format.
+		/// </exception>
+		public override void SetField (string name, params string[] values)
+		{
+			if (!SupportedFields.Contains (name))
+				throw new NotSupportedException ($"ID3v1 does not support the field \"{name}\".");
+			base.SetField (name, values);
+		}
+
+		/// <summary>
+		///    Removes (clears) the named field. Only fields supported by
+		///    ID3v1 may be removed; attempting to remove any other field
+		///    throws <see cref="NotSupportedException" />.
+		/// </summary>
+		/// <exception cref="NotSupportedException">
+		///    <paramref name="name" /> is not a field supported by the
+		///    ID3v1 format.
+		/// </exception>
+		public override void RemoveField (string name)
+		{
+			if (!SupportedFields.Contains (name))
+				throw new NotSupportedException ($"ID3v1 does not support the field \"{name}\".");
+			base.RemoveField (name);
+		}
+
+		/// <summary>
+		///    Enumerates only the fields that ID3v1 supports and that
+		///    currently have a value.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			foreach (string name in SupportedFields) {
+				string[] values = base.GetField (name);
+				if (values != null && values.Length > 0)
+					yield return new KeyValuePair<string, string[]> (name, values);
+			}
 		}
 
 		#endregion

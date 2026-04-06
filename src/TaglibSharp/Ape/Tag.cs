@@ -1854,5 +1854,151 @@ namespace TagLib.Ape
 		}
 
 		#endregion
+
+		#region Field API (GetField / SetField / GetAllFields)
+
+		/// <summary>
+		///    Returns all values for a named field. Standard field names from
+		///    <see cref="TagFieldNames" /> are resolved via the tag's
+		///    properties (which handle APEv2-specific parsing such as
+		///    "num/total" track fields). Any other name is used directly as an
+		///    APEv2 item key.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			if (IsStandardFieldName (name))
+				return base.GetField (name);
+			return GetItemAsStrings (name);
+		}
+
+		/// <summary>
+		///    Sets the named field. Standard field names are written via the
+		///    tag's property setters. Any other name is written directly as an
+		///    APEv2 item key. Pass an empty or <see langword="null" /> array to
+		///    remove the field.
+		/// </summary>
+		public override void SetField (string name, params string[] values)
+		{
+			if (IsStandardFieldName (name)) {
+				base.SetField (name, values);
+				return;
+			}
+			if (values == null || values.Length == 0)
+				RemoveItem (name);
+			else
+				SetValue (name, values);
+		}
+
+		/// <summary>
+		///    Removes the named field. Standard field names are cleared via the
+		///    tag's property setters. Any other name removes the matching
+		///    APEv2 item.
+		/// </summary>
+		public override void RemoveField (string name)
+		{
+			if (IsStandardFieldName (name)) {
+				base.RemoveField (name);
+				return;
+			}
+			RemoveItem (name);
+		}
+
+		/// <summary>
+		///    Enumerates all fields, using standard <see cref="TagFieldNames" />
+		///    names for known APEv2 keys and native APEv2 keys for custom items.
+		///    Standard numeric fields (Track, Disc, etc.) are returned as clean
+		///    decimal strings via the tag's property getters.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			// Standard fields via properties (correct parsing, e.g. "5" not "5/12").
+			foreach (var pair in base.GetAllFields ())
+				yield return pair;
+
+			// Custom APEv2 items that have no standard name equivalent.
+			foreach (Item item in items) {
+				if (item.Type == ItemType.Binary)
+					continue;
+				if (ApeKeyToStandardName (item.Key) != null)
+					continue; // already covered by base.GetAllFields()
+				string[] values = item.ToStringArray ();
+				if (values != null && values.Length > 0)
+					yield return new KeyValuePair<string, string[]> (item.Key, values);
+			}
+		}
+
+		/// <summary>Returns true if <paramref name="name"/> is a known standard field name.</summary>
+		static bool IsStandardFieldName (string name) => name switch {
+			TagFieldNames.Title or TagFieldNames.TitleSort or TagFieldNames.Subtitle or
+			TagFieldNames.Description or TagFieldNames.Performers or TagFieldNames.PerformersSort or
+			TagFieldNames.PerformersRole or TagFieldNames.AlbumArtists or TagFieldNames.AlbumArtistsSort or
+			TagFieldNames.Composers or TagFieldNames.ComposersSort or TagFieldNames.Album or
+			TagFieldNames.AlbumSort or TagFieldNames.Comment or TagFieldNames.Genres or
+			TagFieldNames.Year or TagFieldNames.Track or TagFieldNames.TrackCount or
+			TagFieldNames.Disc or TagFieldNames.DiscCount or TagFieldNames.Lyrics or
+			TagFieldNames.Grouping or TagFieldNames.BeatsPerMinute or TagFieldNames.Conductor or
+			TagFieldNames.Copyright or TagFieldNames.Publisher or TagFieldNames.ISRC or
+			TagFieldNames.RemixedBy or TagFieldNames.InitialKey or TagFieldNames.Length or
+			TagFieldNames.DateTagged or TagFieldNames.MusicBrainzArtistId or
+			TagFieldNames.MusicBrainzReleaseGroupId or TagFieldNames.MusicBrainzReleaseId or
+			TagFieldNames.MusicBrainzReleaseArtistId or TagFieldNames.MusicBrainzTrackId or
+			TagFieldNames.MusicBrainzRecordingId or TagFieldNames.MusicBrainzWorkId or
+			TagFieldNames.MusicBrainzDiscId or TagFieldNames.MusicIpId or TagFieldNames.AmazonId or
+			TagFieldNames.MusicBrainzReleaseStatus or TagFieldNames.MusicBrainzReleaseType or
+			TagFieldNames.MusicBrainzReleaseCountry => true,
+			_ => false,
+		};
+
+		/// <summary>
+		///    Maps an APEv2 item key to its standard <see cref="TagFieldNames"/>
+		///    name, or returns <see langword="null"/> for custom keys.
+		///    Used by <see cref="GetAllFields"/> to skip items already covered
+		///    by the standard property enumeration.
+		/// </summary>
+		static string ApeKeyToStandardName (string key) => key switch {
+			"Title"                      => TagFieldNames.Title,
+			"TitleSort"                  => TagFieldNames.TitleSort,
+			"Subtitle"                   => TagFieldNames.Subtitle,
+			"Description"                => TagFieldNames.Description,
+			"Artist"                     => TagFieldNames.Performers,
+			"ArtistSort"                 => TagFieldNames.PerformersSort,
+			"PerformersRole"             => TagFieldNames.PerformersRole,
+			"Album Artist" or "AlbumArtist" => TagFieldNames.AlbumArtists,
+			"AlbumArtistSort"            => TagFieldNames.AlbumArtistsSort,
+			"Composer"                   => TagFieldNames.Composers,
+			"ComposerSort"               => TagFieldNames.ComposersSort,
+			"Album"                      => TagFieldNames.Album,
+			"AlbumSort"                  => TagFieldNames.AlbumSort,
+			"Comment"                    => TagFieldNames.Comment,
+			"Genre"                      => TagFieldNames.Genres,
+			"Year"                       => TagFieldNames.Year,
+			"Track"                      => TagFieldNames.Track,  // "num/total" — handled via property
+			"Disc"                       => TagFieldNames.Disc,   // "num/total" — handled via property
+			"Lyrics"                     => TagFieldNames.Lyrics,
+			"Grouping"                   => TagFieldNames.Grouping,
+			"BPM"                        => TagFieldNames.BeatsPerMinute,
+			"Conductor"                  => TagFieldNames.Conductor,
+			"Copyright"                  => TagFieldNames.Copyright,
+			"Publisher"                  => TagFieldNames.Publisher,
+			"ISRC"                       => TagFieldNames.ISRC,
+			"MixArtist"                  => TagFieldNames.RemixedBy,
+			"InitialKey"                 => TagFieldNames.InitialKey,
+			"MUSICBRAINZ_ARTISTID"       => TagFieldNames.MusicBrainzArtistId,
+			"MUSICBRAINZ_RELEASEGROUPID" => TagFieldNames.MusicBrainzReleaseGroupId,
+			"MUSICBRAINZ_ALBUMID"        => TagFieldNames.MusicBrainzReleaseId,
+			"MUSICBRAINZ_ALBUMARTISTID"  => TagFieldNames.MusicBrainzReleaseArtistId,
+			"MUSICBRAINZ_RELEASETRACKID" => TagFieldNames.MusicBrainzTrackId,
+			"MUSICBRAINZ_TRACKID"        => TagFieldNames.MusicBrainzRecordingId,
+			"MUSICBRAINZ_WORKID"         => TagFieldNames.MusicBrainzWorkId,
+			"MUSICBRAINZ_DISCID"         => TagFieldNames.MusicBrainzDiscId,
+			"MUSICIP_PUID"               => TagFieldNames.MusicIpId,
+			"ASIN"                       => TagFieldNames.AmazonId,
+			"MUSICBRAINZ_ALBUMSTATUS"    => TagFieldNames.MusicBrainzReleaseStatus,
+			"MUSICBRAINZ_ALBUMTYPE"      => TagFieldNames.MusicBrainzReleaseType,
+			"RELEASECOUNTRY"             => TagFieldNames.MusicBrainzReleaseCountry,
+			_                            => null,
+		};
+
+		#endregion
 	}
 }

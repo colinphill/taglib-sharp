@@ -27,6 +27,8 @@
 //
 
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 
 namespace TagLib;
 
@@ -1621,6 +1623,251 @@ public abstract class Tag
 
 		if (overwrite || target.Pictures == null || target.Pictures.Length == 0)
 			target.Pictures = Pictures;
+	}
+
+	/// <summary>
+	///    Returns all values for a named field as a string array.
+	/// </summary>
+	/// <param name="name">
+	///    The field name. Use constants from <see cref="TagFieldNames" /> for
+	///    standard fields. Tag types that support custom fields (Vorbis, APEv2,
+	///    ID3v2, ASF) also accept format-native keys for non-standard fields.
+	/// </param>
+	/// <returns>
+	///    A <see cref="T:string[]" /> containing the values, or an empty array
+	///    if the field is absent or empty.
+	/// </returns>
+	public virtual string[] GetField (string name)
+	{
+		string s;
+		string[] a;
+		uint u;
+
+		switch (name) {
+		case TagFieldNames.Title:
+			s = Title; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.TitleSort:
+			s = TitleSort; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Subtitle:
+			s = Subtitle; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Description:
+			s = Description; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Performers:
+			a = Performers; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.PerformersSort:
+			a = PerformersSort; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.PerformersRole:
+			a = PerformersRole; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.AlbumArtists:
+			a = AlbumArtists; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.AlbumArtistsSort:
+			a = AlbumArtistsSort; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.Composers:
+			a = Composers; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.ComposersSort:
+			a = ComposersSort; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.Album:
+			s = Album; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.AlbumSort:
+			s = AlbumSort; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Comment:
+			s = Comment; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Genres:
+			a = Genres; return a != null && a.Length > 0 ? a : Array.Empty<string> ();
+		case TagFieldNames.Year:
+			u = Year; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.Track:
+			u = Track; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.TrackCount:
+			u = TrackCount; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.Disc:
+			u = Disc; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.DiscCount:
+			u = DiscCount; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.Lyrics:
+			s = Lyrics; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Grouping:
+			s = Grouping; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.BeatsPerMinute:
+			u = BeatsPerMinute; return u > 0 ? new[] { u.ToString (CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		case TagFieldNames.Conductor:
+			s = Conductor; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Copyright:
+			s = Copyright; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Publisher:
+			s = Publisher; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.ISRC:
+			s = ISRC; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.RemixedBy:
+			s = RemixedBy; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.InitialKey:
+			s = InitialKey; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.Length:
+			s = Length; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.DateTagged: {
+			var dt = DateTagged;
+			return dt != null ? new[] { dt.Value.ToString ("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) } : Array.Empty<string> ();
+		}
+		case TagFieldNames.MusicBrainzArtistId:
+			s = MusicBrainzArtistId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseGroupId:
+			s = MusicBrainzReleaseGroupId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseId:
+			s = MusicBrainzReleaseId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseArtistId:
+			s = MusicBrainzReleaseArtistId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzTrackId:
+			s = MusicBrainzTrackId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzRecordingId:
+			s = MusicBrainzRecordingId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzWorkId:
+			s = MusicBrainzWorkId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzDiscId:
+			s = MusicBrainzDiscId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicIpId:
+			s = MusicIpId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.AmazonId:
+			s = AmazonId; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseStatus:
+			s = MusicBrainzReleaseStatus; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseType:
+			s = MusicBrainzReleaseType; return s != null ? new[] { s } : Array.Empty<string> ();
+		case TagFieldNames.MusicBrainzReleaseCountry:
+			s = MusicBrainzReleaseCountry; return s != null ? new[] { s } : Array.Empty<string> ();
+		default:
+			return Array.Empty<string> ();
+		}
+	}
+
+	/// <summary>
+	///    Sets the named field to the specified values.
+	/// </summary>
+	/// <param name="name">
+	///    The field name. Use constants from <see cref="TagFieldNames" /> for
+	///    standard fields. Tag types that support custom fields also accept
+	///    format-native keys for non-standard fields.
+	/// </param>
+	/// <param name="values">
+	///    The values to store. Pass an empty array or <see langword="null" />
+	///    to clear the field.
+	/// </param>
+	public virtual void SetField (string name, params string[] values)
+	{
+		string first = values != null && values.Length > 0 ? values[0] : null;
+
+		switch (name) {
+		case TagFieldNames.Title:         Title = first; break;
+		case TagFieldNames.TitleSort:     TitleSort = first; break;
+		case TagFieldNames.Subtitle:      Subtitle = first; break;
+		case TagFieldNames.Description:   Description = first; break;
+		case TagFieldNames.Performers:    Performers = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.PerformersSort: PerformersSort = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.PerformersRole: PerformersRole = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.AlbumArtists:  AlbumArtists = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.AlbumArtistsSort: AlbumArtistsSort = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.Composers:     Composers = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.ComposersSort: ComposersSort = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.Album:         Album = first; break;
+		case TagFieldNames.AlbumSort:     AlbumSort = first; break;
+		case TagFieldNames.Comment:       Comment = first; break;
+		case TagFieldNames.Genres:        Genres = values ?? Array.Empty<string> (); break;
+		case TagFieldNames.Year:
+			Year = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint yr) ? yr : 0;
+			break;
+		case TagFieldNames.Track:
+			Track = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint tr) ? tr : 0;
+			break;
+		case TagFieldNames.TrackCount:
+			TrackCount = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint trc) ? trc : 0;
+			break;
+		case TagFieldNames.Disc:
+			Disc = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint dc) ? dc : 0;
+			break;
+		case TagFieldNames.DiscCount:
+			DiscCount = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint dcc) ? dcc : 0;
+			break;
+		case TagFieldNames.Lyrics:        Lyrics = first; break;
+		case TagFieldNames.Grouping:      Grouping = first; break;
+		case TagFieldNames.BeatsPerMinute:
+			BeatsPerMinute = first != null && uint.TryParse (first, NumberStyles.None, CultureInfo.InvariantCulture, out uint bpm) ? bpm : 0;
+			break;
+		case TagFieldNames.Conductor:     Conductor = first; break;
+		case TagFieldNames.Copyright:     Copyright = first; break;
+		case TagFieldNames.Publisher:     Publisher = first; break;
+		case TagFieldNames.ISRC:          ISRC = first; break;
+		case TagFieldNames.RemixedBy:     RemixedBy = first; break;
+		case TagFieldNames.InitialKey:    InitialKey = first; break;
+		case TagFieldNames.Length:        Length = first; break;
+		case TagFieldNames.DateTagged:
+			DateTagged = first != null && DateTime.TryParse (first, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt) ? dt : (DateTime?)null;
+			break;
+		case TagFieldNames.MusicBrainzArtistId:         MusicBrainzArtistId = first; break;
+		case TagFieldNames.MusicBrainzReleaseGroupId:   MusicBrainzReleaseGroupId = first; break;
+		case TagFieldNames.MusicBrainzReleaseId:        MusicBrainzReleaseId = first; break;
+		case TagFieldNames.MusicBrainzReleaseArtistId:  MusicBrainzReleaseArtistId = first; break;
+		case TagFieldNames.MusicBrainzTrackId:          MusicBrainzTrackId = first; break;
+		case TagFieldNames.MusicBrainzRecordingId:      MusicBrainzRecordingId = first; break;
+		case TagFieldNames.MusicBrainzWorkId:           MusicBrainzWorkId = first; break;
+		case TagFieldNames.MusicBrainzDiscId:           MusicBrainzDiscId = first; break;
+		case TagFieldNames.MusicIpId:                   MusicIpId = first; break;
+		case TagFieldNames.AmazonId:                    AmazonId = first; break;
+		case TagFieldNames.MusicBrainzReleaseStatus:    MusicBrainzReleaseStatus = first; break;
+		case TagFieldNames.MusicBrainzReleaseType:      MusicBrainzReleaseType = first; break;
+		case TagFieldNames.MusicBrainzReleaseCountry:   MusicBrainzReleaseCountry = first; break;
+		// Unknown names are ignored in the base implementation.
+		}
+	}
+
+	/// <summary>
+	///    Removes the named field, clearing all its values.
+	/// </summary>
+	/// <param name="name">
+	///    The field name. Uses the same naming convention as
+	///    <see cref="GetField" /> and <see cref="SetField" />.
+	/// </param>
+	public virtual void RemoveField (string name)
+	{
+		SetField (name);
+	}
+
+	/// <summary>
+	///    Enumerates all fields that have at least one non-empty value.
+	/// </summary>
+	/// <returns>
+	///    A sequence of <see cref="T:System.Collections.Generic.KeyValuePair`2" /> pairs
+	///    where the key is a field name (see <see cref="TagFieldNames" />) and
+	///    the value is a non-empty string array. For tag types that support
+	///    custom fields the sequence also includes format-native fields that
+	///    have no standard name equivalent.
+	/// </returns>
+	public virtual IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+	{
+		string[] allNames = {
+			TagFieldNames.Title, TagFieldNames.TitleSort, TagFieldNames.Subtitle,
+			TagFieldNames.Description, TagFieldNames.Performers, TagFieldNames.PerformersSort,
+			TagFieldNames.PerformersRole, TagFieldNames.AlbumArtists, TagFieldNames.AlbumArtistsSort,
+			TagFieldNames.Composers, TagFieldNames.ComposersSort, TagFieldNames.Album,
+			TagFieldNames.AlbumSort, TagFieldNames.Comment, TagFieldNames.Genres,
+			TagFieldNames.Year, TagFieldNames.Track, TagFieldNames.TrackCount,
+			TagFieldNames.Disc, TagFieldNames.DiscCount, TagFieldNames.Lyrics,
+			TagFieldNames.Grouping, TagFieldNames.BeatsPerMinute, TagFieldNames.Conductor,
+			TagFieldNames.Copyright, TagFieldNames.Publisher, TagFieldNames.ISRC,
+			TagFieldNames.RemixedBy, TagFieldNames.InitialKey, TagFieldNames.Length,
+			TagFieldNames.DateTagged,
+			TagFieldNames.MusicBrainzArtistId, TagFieldNames.MusicBrainzReleaseGroupId,
+			TagFieldNames.MusicBrainzReleaseId, TagFieldNames.MusicBrainzReleaseArtistId,
+			TagFieldNames.MusicBrainzTrackId, TagFieldNames.MusicBrainzRecordingId,
+			TagFieldNames.MusicBrainzWorkId, TagFieldNames.MusicBrainzDiscId,
+			TagFieldNames.MusicIpId, TagFieldNames.AmazonId,
+			TagFieldNames.MusicBrainzReleaseStatus, TagFieldNames.MusicBrainzReleaseType,
+			TagFieldNames.MusicBrainzReleaseCountry,
+		};
+
+		foreach (string fieldName in allNames) {
+			string[] values = GetField (fieldName);
+			if (values.Length > 0)
+				yield return new KeyValuePair<string, string[]> (fieldName, values);
+		}
 	}
 
 	/// <summary>

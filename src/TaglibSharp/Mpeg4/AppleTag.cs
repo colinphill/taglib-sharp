@@ -1879,6 +1879,165 @@ namespace TagLib.Mpeg4
 			ilst_box.ClearChildren ();
 		}
 
+		const string AppleItunesMean = "com.apple.iTunes";
+
+		/// <summary>
+		///    Returns all values for a named field. Standard field names are
+		///    resolved via the tag's property getters. Any other name looks up a
+		///    freeform box with mean <c>"com.apple.iTunes"</c> and name equal to
+		///    the field name. The explicit prefix <c>"----:mean:name"</c> is still
+		///    accepted for addressing freeform boxes with a non-default mean.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			if (IsStandardFieldName (name))
+				return base.GetField (name);
+
+			FreeformKey (name, out string mean, out string fname);
+			return DataBoxes (mean, fname)
+				.Where (b => (b.Flags & 1) != 0)
+				.Select (b => b.Text)
+				.Where (t => t != null)
+				.ToArray ();
+		}
+
+		/// <summary>
+		///    Sets the named field. Standard field names are written via the
+		///    tag's property setters. Any other name is written as a freeform
+		///    box with mean <c>"com.apple.iTunes"</c>. The explicit prefix
+		///    <c>"----:mean:name"</c> is accepted for a non-default mean. Pass
+		///    an empty or <see langword="null" /> array to remove the field.
+		/// </summary>
+		public override void SetField (string name, params string[] values)
+		{
+			if (IsStandardFieldName (name)) {
+				base.SetField (name, values);
+				return;
+			}
+			FreeformKey (name, out string mean, out string fname);
+			SetFreeformData (mean, fname, values ?? Array.Empty<string> ());
+		}
+
+		/// <summary>
+		///    Removes the named field. Standard field names are cleared via the
+		///    tag's property setters. Any other name removes the matching
+		///    freeform box.
+		/// </summary>
+		public override void RemoveField (string name)
+		{
+			if (IsStandardFieldName (name)) {
+				base.RemoveField (name);
+				return;
+			}
+			FreeformKey (name, out string mean, out string fname);
+			SetFreeformData (mean, fname, Array.Empty<string> ());
+		}
+
+		/// <summary>
+		///    Enumerates all fields, using standard <see cref="TagFieldNames" />
+		///    names for known properties. Freeform boxes with mean
+		///    <c>"com.apple.iTunes"</c> are emitted using just their name (no
+		///    prefix). Freeform boxes with other means use <c>"----:mean:name"</c>.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			foreach (var pair in base.GetAllFields ())
+				yield return pair;
+
+			foreach (Box box in ilst_box.Children) {
+				if (box.BoxType != BoxType.DASH)
+					continue;
+				var mean_box = box.GetChild (BoxType.Mean) as AppleAdditionalInfoBox;
+				var name_box = box.GetChild (BoxType.Name) as AppleAdditionalInfoBox;
+				if (mean_box == null || name_box == null)
+					continue;
+				string[] textValues = box.GetChildren (BoxType.Data)
+					.Cast<AppleDataBox> ()
+					.Where (b => (b.Flags & 1) != 0)
+					.Select (b => b.Text)
+					.Where (t => t != null)
+					.ToArray ();
+				if (textValues.Length == 0)
+					continue;
+				// com.apple.iTunes boxes are addressable without a prefix.
+				string fieldName = mean_box.Text == AppleItunesMean
+					? name_box.Text
+					: $"----:{mean_box.Text}:{name_box.Text}";
+				yield return new KeyValuePair<string, string[]> (fieldName, textValues);
+			}
+		}
+
+		/// <summary>
+		///    Resolves a field name into a freeform (----) mean/name pair.
+		///    Names with the <c>"----:"</c> prefix are split into mean and name.
+		///    All other names use <c>"com.apple.iTunes"</c> as the mean.
+		/// </summary>
+		static void FreeformKey (string name, out string mean, out string fname)
+		{
+			if (name != null && name.StartsWith ("----:", StringComparison.Ordinal)) {
+				string[] parts = name.Substring (5).Split (new[] { ':' }, 2);
+				if (parts.Length == 2) {
+					mean = parts[0];
+					fname = parts[1];
+					return;
+				}
+			}
+			mean = AppleItunesMean;
+			fname = name;
+		}
+
+		static bool IsStandardFieldName (string name) => name switch {
+			TagFieldNames.Title or TagFieldNames.TitleSort or TagFieldNames.Subtitle or
+			TagFieldNames.Description or TagFieldNames.Performers or TagFieldNames.PerformersSort or
+			TagFieldNames.PerformersRole or TagFieldNames.AlbumArtists or TagFieldNames.AlbumArtistsSort or
+			TagFieldNames.Composers or TagFieldNames.ComposersSort or TagFieldNames.Album or
+			TagFieldNames.AlbumSort or TagFieldNames.Comment or TagFieldNames.Genres or
+			TagFieldNames.Year or TagFieldNames.Track or TagFieldNames.TrackCount or
+			TagFieldNames.Disc or TagFieldNames.DiscCount or TagFieldNames.Lyrics or
+			TagFieldNames.Grouping or TagFieldNames.BeatsPerMinute or TagFieldNames.Conductor or
+			TagFieldNames.Copyright or TagFieldNames.Publisher or TagFieldNames.ISRC or
+			TagFieldNames.RemixedBy or TagFieldNames.InitialKey or TagFieldNames.Length or
+			TagFieldNames.DateTagged or TagFieldNames.MusicBrainzArtistId or
+			TagFieldNames.MusicBrainzReleaseGroupId or TagFieldNames.MusicBrainzReleaseId or
+			TagFieldNames.MusicBrainzReleaseArtistId or TagFieldNames.MusicBrainzTrackId or
+			TagFieldNames.MusicBrainzRecordingId or TagFieldNames.MusicBrainzWorkId or
+			TagFieldNames.MusicBrainzDiscId or TagFieldNames.MusicIpId or TagFieldNames.AmazonId or
+			TagFieldNames.MusicBrainzReleaseStatus or TagFieldNames.MusicBrainzReleaseType or
+			TagFieldNames.MusicBrainzReleaseCountry => true,
+			_ => false,
+		};
+
+		/// <summary>
+		///    Writes a set of freeform (----) boxes with the given mean and name,
+		///    replacing any existing boxes with the same mean/name pair.
+		/// </summary>
+		void SetFreeformData (string mean, string name, string[] values)
+		{
+			// Remove existing boxes for this mean/name.
+			foreach (Box box in ilst_box.Children.ToList ()) {
+				if (box.BoxType != BoxType.DASH)
+					continue;
+				var mb = box.GetChild (BoxType.Mean) as AppleAdditionalInfoBox;
+				var nb = box.GetChild (BoxType.Name) as AppleAdditionalInfoBox;
+				if (mb?.Text == mean && nb?.Text == name)
+					ilst_box.RemoveChild (box);
+			}
+
+			foreach (string value in values) {
+				var mean_box = new AppleAdditionalInfoBox (BoxType.Mean, 0, 1);
+				var name_box = new AppleAdditionalInfoBox (BoxType.Name, 0, 1);
+				var data_box = new AppleDataBox (BoxType.Data, 1);
+				mean_box.Text = mean;
+				name_box.Text = name;
+				data_box.Text = value;
+				var whole_box = new AppleAnnotationBox (BoxType.DASH);
+				whole_box.AddChild (mean_box);
+				whole_box.AddChild (name_box);
+				whole_box.AddChild (data_box);
+				ilst_box.AddChild (whole_box);
+			}
+		}
+
 		#endregion
 	}
 }

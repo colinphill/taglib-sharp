@@ -1565,6 +1565,135 @@ namespace TagLib.Asf
 			MetadataLibraryObject.RemoveRecords (0, 0, "WM/Picture");
 		}
 
+		/// <summary>
+		///    Returns all values for a named field. Standard field names are
+		///    resolved via the tag's properties. Any other name is used
+		///    directly as an ASF extended content descriptor name.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			if (IsStandardFieldName (name))
+				return base.GetField (name);
+			string val = GetDescriptorString (name);
+			return val != null ? new[] { val } : Array.Empty<string> ();
+		}
+
+		/// <summary>
+		///    Sets the named field. Standard field names are written via the
+		///    tag's property setters. Any other name is written directly as an
+		///    ASF extended content descriptor. Pass an empty or <see
+		///    langword="null" /> array to remove the field.
+		/// </summary>
+		public override void SetField (string name, params string[] values)
+		{
+			if (IsStandardFieldName (name)) {
+				base.SetField (name, values);
+				return;
+			}
+			string first = values != null && values.Length > 0 ? values[0] : null;
+			SetDescriptorString (first, name);
+		}
+
+		/// <summary>
+		///    Removes the named field. Standard field names are cleared via the
+		///    tag's property setters. Any other name removes the matching
+		///    ASF extended content descriptor.
+		/// </summary>
+		public override void RemoveField (string name)
+		{
+			if (IsStandardFieldName (name)) {
+				base.RemoveField (name);
+				return;
+			}
+			RemoveDescriptors (name);
+		}
+
+		/// <summary>
+		///    Enumerates all fields, using standard <see cref="TagFieldNames" />
+		///    names for known properties and native ASF descriptor names for
+		///    extended content descriptors not covered by a standard property.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			foreach (var pair in base.GetAllFields ())
+				yield return pair;
+
+			foreach (ContentDescriptor desc in ExtendedContentDescriptionObject) {
+				if (desc.Type != DataType.Unicode)
+					continue;
+				string val = desc.ToString ();
+				if (string.IsNullOrEmpty (val))
+					continue;
+				// Skip descriptors already covered by standard properties.
+				if (AsfDescriptorToStandardName (desc.Name) != null)
+					continue;
+				yield return new KeyValuePair<string, string[]> (desc.Name, new[] { val });
+			}
+		}
+
+		static bool IsStandardFieldName (string name) => name switch {
+			TagFieldNames.Title or TagFieldNames.TitleSort or TagFieldNames.Subtitle or
+			TagFieldNames.Description or TagFieldNames.Performers or TagFieldNames.PerformersSort or
+			TagFieldNames.PerformersRole or TagFieldNames.AlbumArtists or TagFieldNames.AlbumArtistsSort or
+			TagFieldNames.Composers or TagFieldNames.ComposersSort or TagFieldNames.Album or
+			TagFieldNames.AlbumSort or TagFieldNames.Comment or TagFieldNames.Genres or
+			TagFieldNames.Year or TagFieldNames.Track or TagFieldNames.TrackCount or
+			TagFieldNames.Disc or TagFieldNames.DiscCount or TagFieldNames.Lyrics or
+			TagFieldNames.Grouping or TagFieldNames.BeatsPerMinute or TagFieldNames.Conductor or
+			TagFieldNames.Copyright or TagFieldNames.Publisher or TagFieldNames.ISRC or
+			TagFieldNames.RemixedBy or TagFieldNames.InitialKey or TagFieldNames.Length or
+			TagFieldNames.DateTagged or TagFieldNames.MusicBrainzArtistId or
+			TagFieldNames.MusicBrainzReleaseGroupId or TagFieldNames.MusicBrainzReleaseId or
+			TagFieldNames.MusicBrainzReleaseArtistId or TagFieldNames.MusicBrainzTrackId or
+			TagFieldNames.MusicBrainzRecordingId or TagFieldNames.MusicBrainzWorkId or
+			TagFieldNames.MusicBrainzDiscId or TagFieldNames.MusicIpId or TagFieldNames.AmazonId or
+			TagFieldNames.MusicBrainzReleaseStatus or TagFieldNames.MusicBrainzReleaseType or
+			TagFieldNames.MusicBrainzReleaseCountry => true,
+			_ => false,
+		};
+
+		/// <summary>
+		///    Maps an ASF extended content descriptor name to its standard
+		///    <see cref="TagFieldNames" /> name, or returns
+		///    <see langword="null" /> for descriptors with no standard equivalent.
+		///    Used by <see cref="GetAllFields" /> to skip already-covered fields.
+		/// </summary>
+		static string AsfDescriptorToStandardName (string name) => name switch {
+			"WM/TitleSortOrder"          => TagFieldNames.TitleSort,
+			"WM/SubTitle"                => TagFieldNames.Subtitle,
+			"WM/ArtistSortOrder"         => TagFieldNames.PerformersSort,
+			"WM/AlbumArtist" or "AlbumArtist" => TagFieldNames.AlbumArtists,
+			"WM/AlbumArtistSortOrder"    => TagFieldNames.AlbumArtistsSort,
+			"WM/Composer" or "Composer"  => TagFieldNames.Composers,
+			"WM/AlbumTitle" or "Album"   => TagFieldNames.Album,
+			"WM/AlbumSortOrder"          => TagFieldNames.AlbumSort,
+			"WM/Text"                    => TagFieldNames.Comment,
+			"WM/Genre" or "Genre" or "WM/GenreID" => TagFieldNames.Genres,
+			"WM/Year"                    => TagFieldNames.Year,
+			"WM/TrackNumber"             => TagFieldNames.Track,
+			"WM/PartOfSet"               => TagFieldNames.Disc,
+			"WM/Lyrics"                  => TagFieldNames.Lyrics,
+			"WM/ContentGroupDescription" => TagFieldNames.Grouping,
+			"WM/BeatsPerMinute"          => TagFieldNames.BeatsPerMinute,
+			"WM/Conductor"               => TagFieldNames.Conductor,
+			"WM/Publisher"               => TagFieldNames.Publisher,
+			"WM/ISRC"                    => TagFieldNames.ISRC,
+			"WM/ModifiedBy"              => TagFieldNames.RemixedBy,
+			"WM/InitialKey"              => TagFieldNames.InitialKey,
+			"MusicBrainz/Artist Id"      => TagFieldNames.MusicBrainzArtistId,
+			"MusicBrainz/Release Group Id" => TagFieldNames.MusicBrainzReleaseGroupId,
+			"MusicBrainz/Album Id"       => TagFieldNames.MusicBrainzReleaseId,
+			"MusicBrainz/Album Artist Id" => TagFieldNames.MusicBrainzReleaseArtistId,
+			"MusicBrainz/Release Track Id" => TagFieldNames.MusicBrainzTrackId,
+			"MusicBrainz/Track Id"       => TagFieldNames.MusicBrainzRecordingId,
+			"MusicBrainz/Work Id"        => TagFieldNames.MusicBrainzWorkId,
+			"MusicBrainz/Disc Id"        => TagFieldNames.MusicBrainzDiscId,
+			"MusicBrainz/Album Status"   => TagFieldNames.MusicBrainzReleaseStatus,
+			"MusicBrainz/Album Type"     => TagFieldNames.MusicBrainzReleaseType,
+			"MusicBrainz/Album Release Country" => TagFieldNames.MusicBrainzReleaseCountry,
+			_                            => null,
+		};
+
 		#endregion
 	}
 }

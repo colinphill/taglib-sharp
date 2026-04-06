@@ -2499,5 +2499,127 @@ namespace TagLib.Id3v2
 		}
 
 		#endregion
+
+		#region Field API (GetField / SetField / RemoveField / GetAllFields)
+
+		/// <summary>
+		///    Returns all values for a named field. Standard field names from
+		///    <see cref="TagFieldNames" /> are resolved via the tag's property
+		///    getters. Any other name looks up (or creates) a TXXX user-defined
+		///    text frame whose description matches the name. The optional prefix
+		///    <c>"TXXX:"</c> is still accepted for disambiguation.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			if (IsStandardFieldName (name))
+				return base.GetField (name);
+
+			string desc = TxxxDesc (name);
+			var frame = UserTextInformationFrame.Get (this, desc, DefaultEncoding, false, false);
+			return frame?.Text ?? Array.Empty<string> ();
+		}
+
+		/// <summary>
+		///    Sets the named field. Standard field names are written via the
+		///    tag's property setters. Any other name is stored in a TXXX
+		///    user-defined text frame. The optional prefix <c>"TXXX:"</c> is
+		///    accepted for disambiguation. Pass an empty or
+		///    <see langword="null" /> array to remove the field.
+		/// </summary>
+		public override void SetField (string name, params string[] values)
+		{
+			if (IsStandardFieldName (name)) {
+				base.SetField (name, values);
+				return;
+			}
+
+			string desc = TxxxDesc (name);
+			string first = values != null && values.Length > 0 ? values[0] : null;
+			SetUserTextAsString (desc, first != null ? string.Join (";", values) : null, false);
+		}
+
+		/// <summary>
+		///    Removes the named field. Standard field names are cleared via the
+		///    tag's property setters. Any other name removes the matching TXXX frame.
+		/// </summary>
+		public override void RemoveField (string name)
+		{
+			if (IsStandardFieldName (name)) {
+				base.RemoveField (name);
+				return;
+			}
+			SetUserTextAsString (TxxxDesc (name), null, false);
+		}
+
+		/// <summary>
+		///    Enumerates all fields, using standard <see cref="TagFieldNames" />
+		///    names for properties and TXXX frame descriptions (without any
+		///    prefix) for user-defined frames not covered by a standard property.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			foreach (var pair in base.GetAllFields ())
+				yield return pair;
+
+			foreach (UserTextInformationFrame txxx in GetFrames<UserTextInformationFrame> ()) {
+				if (txxx.Text == null || txxx.Text.Length == 0)
+					continue;
+				if (TxxxDescriptionToStandardName (txxx.Description) != null)
+					continue;
+				yield return new KeyValuePair<string, string[]> (txxx.Description, txxx.Text);
+			}
+		}
+
+		/// <summary>
+		///    Returns the TXXX description for a field name: strips the
+		///    optional <c>"TXXX:"</c> prefix if present, otherwise returns
+		///    the name as-is.
+		/// </summary>
+		static string TxxxDesc (string name) =>
+			name != null && name.StartsWith ("TXXX:", StringComparison.OrdinalIgnoreCase)
+				? name.Substring (5) : name;
+
+		static bool IsStandardFieldName (string name) => name switch {
+			TagFieldNames.Title or TagFieldNames.TitleSort or TagFieldNames.Subtitle or
+			TagFieldNames.Description or TagFieldNames.Performers or TagFieldNames.PerformersSort or
+			TagFieldNames.PerformersRole or TagFieldNames.AlbumArtists or TagFieldNames.AlbumArtistsSort or
+			TagFieldNames.Composers or TagFieldNames.ComposersSort or TagFieldNames.Album or
+			TagFieldNames.AlbumSort or TagFieldNames.Comment or TagFieldNames.Genres or
+			TagFieldNames.Year or TagFieldNames.Track or TagFieldNames.TrackCount or
+			TagFieldNames.Disc or TagFieldNames.DiscCount or TagFieldNames.Lyrics or
+			TagFieldNames.Grouping or TagFieldNames.BeatsPerMinute or TagFieldNames.Conductor or
+			TagFieldNames.Copyright or TagFieldNames.Publisher or TagFieldNames.ISRC or
+			TagFieldNames.RemixedBy or TagFieldNames.InitialKey or TagFieldNames.Length or
+			TagFieldNames.DateTagged or TagFieldNames.MusicBrainzArtistId or
+			TagFieldNames.MusicBrainzReleaseGroupId or TagFieldNames.MusicBrainzReleaseId or
+			TagFieldNames.MusicBrainzReleaseArtistId or TagFieldNames.MusicBrainzTrackId or
+			TagFieldNames.MusicBrainzRecordingId or TagFieldNames.MusicBrainzWorkId or
+			TagFieldNames.MusicBrainzDiscId or TagFieldNames.MusicIpId or TagFieldNames.AmazonId or
+			TagFieldNames.MusicBrainzReleaseStatus or TagFieldNames.MusicBrainzReleaseType or
+			TagFieldNames.MusicBrainzReleaseCountry => true,
+			_ => false,
+		};
+
+		/// <summary>
+		///    Returns the standard field name for a well-known TXXX description,
+		///    used by <see cref="GetAllFields" /> to skip double-counting.
+		/// </summary>
+		static string TxxxDescriptionToStandardName (string desc) => desc switch {
+			"Description"                       => TagFieldNames.Description,
+			"MusicBrainz Artist Id"             => TagFieldNames.MusicBrainzArtistId,
+			"MusicBrainz Release Group Id"      => TagFieldNames.MusicBrainzReleaseGroupId,
+			"MusicBrainz Album Id"              => TagFieldNames.MusicBrainzReleaseId,
+			"MusicBrainz Album Artist Id"       => TagFieldNames.MusicBrainzReleaseArtistId,
+			"MusicBrainz Release Track Id"      => TagFieldNames.MusicBrainzTrackId,
+			"MusicBrainz Disc Id"               => TagFieldNames.MusicBrainzDiscId,
+			"MusicBrainz Album Status"          => TagFieldNames.MusicBrainzReleaseStatus,
+			"MusicBrainz Album Type"            => TagFieldNames.MusicBrainzReleaseType,
+			"MusicBrainz Album Release Country" => TagFieldNames.MusicBrainzReleaseCountry,
+			"ASIN"                              => TagFieldNames.AmazonId,
+			"MusicIP PUID"                      => TagFieldNames.MusicIpId,
+			_                                   => null,
+		};
+
+		#endregion
 	}
 }

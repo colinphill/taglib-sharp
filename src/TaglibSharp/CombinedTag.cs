@@ -2122,6 +2122,58 @@ namespace TagLib
 				tag.Clear ();
 		}
 
+		/// <summary>
+		///    Returns all values for the named field from the first child tag
+		///    that has a non-empty value for it.
+		/// </summary>
+		public override string[] GetField (string name)
+		{
+			foreach (Tag tag in tags) {
+				if (tag == null)
+					continue;
+				string[] values = tag.GetField (name);
+				if (values != null && values.Length > 0)
+					return values;
+			}
+			return Array.Empty<string> ();
+		}
+
+		/// <summary>
+		///    Sets the named field on all child tags.
+		/// </summary>
+		public override void SetField (string name, params string[] values)
+		{
+			foreach (Tag tag in tags)
+				tag?.SetField (name, values);
+		}
+
+		/// <summary>
+		///    Removes the named field from all child tags.
+		/// </summary>
+		public override void RemoveField (string name)
+		{
+			foreach (Tag tag in tags)
+				tag?.RemoveField (name);
+		}
+
+		/// <summary>
+		///    Enumerates all fields across all child tags. Each field name
+		///    appears at most once; the value is taken from the first child tag
+		///    that has a non-empty value for that name.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			var seen = new HashSet<string> (StringComparer.Ordinal);
+			foreach (Tag tag in tags) {
+				if (tag == null)
+					continue;
+				foreach (var pair in tag.GetAllFields ()) {
+					if (seen.Add (pair.Key))
+						yield return pair;
+				}
+			}
+		}
+
 		#endregion
 	}
 }

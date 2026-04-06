@@ -133,12 +133,13 @@ namespace TagLib.Ogg
 		/// <exception cref="ArgumentNullException">
 		///    <paramref name="key" /> is <see langword="null" />.
 		/// </exception>
-		public string[] GetField (string key)
+		public override string[] GetField (string key)
 		{
 			if (key == null)
 				throw new ArgumentNullException (nameof (key));
 
-			key = key.ToUpper (CultureInfo.InvariantCulture);
+			// Translate a standard TagFieldNames name to the Vorbis key.
+			key = StandardNameToXiphKey (key) ?? key.ToUpper (CultureInfo.InvariantCulture);
 
 			EnsurePictureFieldsClean (key);
 
@@ -219,12 +220,13 @@ namespace TagLib.Ogg
 		/// <exception cref="ArgumentNullException">
 		///    <paramref name="key" /> is <see langword="null" />.
 		/// </exception>
-		public void SetField (string key, params string[] values)
+		public override void SetField (string key, params string[] values)
 		{
 			if (key == null)
 				throw new ArgumentNullException (nameof (key));
 
-			key = key.ToUpper (CultureInfo.InvariantCulture);
+			// Translate a standard TagFieldNames name to the Vorbis key.
+			key = StandardNameToXiphKey (key) ?? key.ToUpper (CultureInfo.InvariantCulture);
 
 			if (values == null || values.Length == 0) {
 				RemoveField (key);
@@ -258,12 +260,12 @@ namespace TagLib.Ogg
 		/// <exception cref="ArgumentNullException">
 		///    <paramref name="key" /> is <see langword="null" />.
 		/// </exception>
-		public void RemoveField (string key)
+		public override void RemoveField (string key)
 		{
 			if (key == null)
 				throw new ArgumentNullException (nameof (key));
 
-			key = key.ToUpper (CultureInfo.InvariantCulture);
+			key = StandardNameToXiphKey (key) ?? key.ToUpper (CultureInfo.InvariantCulture);
 
 			field_list.Remove (key);
 
@@ -1721,6 +1723,131 @@ namespace TagLib.Ogg
 			pictures = new IPicture[0];
 			picture_fields_dirty = false;
 		}
+
+		/// <summary>
+		///    Enumerates all fields in this Vorbis comment, with standard
+		///    <see cref="TagFieldNames" /> names used for known Vorbis keys.
+		///    Custom fields that have no standard name equivalent are yielded
+		///    using their native Vorbis key.
+		/// </summary>
+		public override IEnumerable<KeyValuePair<string, string[]>> GetAllFields ()
+		{
+			foreach (var pair in field_list) {
+				if (pair.Value == null || pair.Value.Length == 0)
+					continue;
+				string standardName = XiphKeyToStandardName (pair.Key) ?? pair.Key;
+				yield return new KeyValuePair<string, string[]> (standardName, (string[])pair.Value.Clone ());
+			}
+		}
+
+		#endregion
+
+		#region Private Helpers — Standard Name Mapping
+
+		/// <summary>
+		///    Returns the Vorbis comment key for a standard field name, or
+		///    <see langword="null" /> if <paramref name="name" /> is not a
+		///    recognized standard name.
+		/// </summary>
+		static string StandardNameToXiphKey (string name) => name switch {
+			TagFieldNames.Title                    => "TITLE",
+			TagFieldNames.TitleSort                => "TITLESORT",
+			TagFieldNames.Subtitle                 => "SUBTITLE",
+			TagFieldNames.Description              => "DESCRIPTION",
+			TagFieldNames.Performers               => "ARTIST",
+			TagFieldNames.PerformersSort           => "ARTISTSORT",
+			TagFieldNames.PerformersRole           => "ARTISTROLE",
+			TagFieldNames.AlbumArtists             => "ALBUMARTIST",
+			TagFieldNames.AlbumArtistsSort         => "ALBUMARTISTSORT",
+			TagFieldNames.Composers                => "COMPOSER",
+			TagFieldNames.ComposersSort            => "COMPOSERSORT",
+			TagFieldNames.Album                    => "ALBUM",
+			TagFieldNames.AlbumSort                => "ALBUMSORT",
+			TagFieldNames.Comment                  => "COMMENT",
+			TagFieldNames.Genres                   => "GENRE",
+			TagFieldNames.Year                     => "DATE",
+			TagFieldNames.Track                    => "TRACKNUMBER",
+			TagFieldNames.TrackCount               => "TRACKTOTAL",
+			TagFieldNames.Disc                     => "DISCNUMBER",
+			TagFieldNames.DiscCount                => "DISCTOTAL",
+			TagFieldNames.Lyrics                   => "LYRICS",
+			TagFieldNames.Grouping                 => "GROUPING",
+			TagFieldNames.BeatsPerMinute           => "BPM",
+			TagFieldNames.Conductor                => "CONDUCTOR",
+			TagFieldNames.Copyright                => "COPYRIGHT",
+			TagFieldNames.Publisher                => "ORGANIZATION",
+			TagFieldNames.ISRC                     => "ISRC",
+			TagFieldNames.RemixedBy                => "REMIXEDBY",
+			TagFieldNames.InitialKey               => "INITIALKEY",
+			TagFieldNames.DateTagged               => "DATETAGGED",
+			TagFieldNames.MusicBrainzArtistId      => "MUSICBRAINZ_ARTISTID",
+			TagFieldNames.MusicBrainzReleaseGroupId => "MUSICBRAINZ_RELEASEGROUPID",
+			TagFieldNames.MusicBrainzReleaseId     => "MUSICBRAINZ_ALBUMID",
+			TagFieldNames.MusicBrainzReleaseArtistId => "MUSICBRAINZ_ALBUMARTISTID",
+			TagFieldNames.MusicBrainzTrackId       => "MUSICBRAINZ_RELEASETRACKID",
+			TagFieldNames.MusicBrainzRecordingId   => "MUSICBRAINZ_TRACKID",
+			TagFieldNames.MusicBrainzWorkId        => "MUSICBRAINZ_WORKID",
+			TagFieldNames.MusicBrainzDiscId        => "MUSICBRAINZ_DISCID",
+			TagFieldNames.MusicIpId                => "MUSICIP_PUID",
+			TagFieldNames.AmazonId                 => "ASIN",
+			TagFieldNames.MusicBrainzReleaseStatus => "MUSICBRAINZ_ALBUMSTATUS",
+			TagFieldNames.MusicBrainzReleaseType   => "MUSICBRAINZ_ALBUMTYPE",
+			TagFieldNames.MusicBrainzReleaseCountry => "RELEASECOUNTRY",
+			_                                      => null,
+		};
+
+		/// <summary>
+		///    Returns the standard <see cref="TagFieldNames" /> name for a
+		///    Vorbis comment key, or <see langword="null" /> if the key has no
+		///    standard name equivalent. Only the primary Vorbis key for each
+		///    standard name is mapped; secondary aliases appear as raw fields.
+		/// </summary>
+		static string XiphKeyToStandardName (string key) => key switch {
+			"TITLE"                       => TagFieldNames.Title,
+			"TITLESORT"                   => TagFieldNames.TitleSort,
+			"SUBTITLE"                    => TagFieldNames.Subtitle,
+			"DESCRIPTION"                 => TagFieldNames.Description,
+			"ARTIST"                      => TagFieldNames.Performers,
+			"ARTISTSORT"                  => TagFieldNames.PerformersSort,
+			"ARTISTROLE"                  => TagFieldNames.PerformersRole,
+			"ALBUMARTIST"                 => TagFieldNames.AlbumArtists,
+			"ALBUMARTISTSORT"             => TagFieldNames.AlbumArtistsSort,
+			"COMPOSER"                    => TagFieldNames.Composers,
+			"COMPOSERSORT"                => TagFieldNames.ComposersSort,
+			"ALBUM"                       => TagFieldNames.Album,
+			"ALBUMSORT"                   => TagFieldNames.AlbumSort,
+			"COMMENT"                     => TagFieldNames.Comment,
+			"GENRE"                       => TagFieldNames.Genres,
+			"DATE"                        => TagFieldNames.Year,
+			"TRACKNUMBER"                 => TagFieldNames.Track,
+			"TRACKTOTAL"                  => TagFieldNames.TrackCount,
+			"DISCNUMBER"                  => TagFieldNames.Disc,
+			"DISCTOTAL"                   => TagFieldNames.DiscCount,
+			"LYRICS"                      => TagFieldNames.Lyrics,
+			"GROUPING"                    => TagFieldNames.Grouping,
+			"BPM"                         => TagFieldNames.BeatsPerMinute,
+			"CONDUCTOR"                   => TagFieldNames.Conductor,
+			"COPYRIGHT"                   => TagFieldNames.Copyright,
+			"ORGANIZATION"                => TagFieldNames.Publisher,
+			"ISRC"                        => TagFieldNames.ISRC,
+			"REMIXEDBY"                   => TagFieldNames.RemixedBy,
+			"INITIALKEY"                  => TagFieldNames.InitialKey,
+			"DATETAGGED"                  => TagFieldNames.DateTagged,
+			"MUSICBRAINZ_ARTISTID"        => TagFieldNames.MusicBrainzArtistId,
+			"MUSICBRAINZ_RELEASEGROUPID"  => TagFieldNames.MusicBrainzReleaseGroupId,
+			"MUSICBRAINZ_ALBUMID"         => TagFieldNames.MusicBrainzReleaseId,
+			"MUSICBRAINZ_ALBUMARTISTID"   => TagFieldNames.MusicBrainzReleaseArtistId,
+			"MUSICBRAINZ_RELEASETRACKID"  => TagFieldNames.MusicBrainzTrackId,
+			"MUSICBRAINZ_TRACKID"         => TagFieldNames.MusicBrainzRecordingId,
+			"MUSICBRAINZ_WORKID"          => TagFieldNames.MusicBrainzWorkId,
+			"MUSICBRAINZ_DISCID"          => TagFieldNames.MusicBrainzDiscId,
+			"MUSICIP_PUID"                => TagFieldNames.MusicIpId,
+			"ASIN"                        => TagFieldNames.AmazonId,
+			"MUSICBRAINZ_ALBUMSTATUS"     => TagFieldNames.MusicBrainzReleaseStatus,
+			"MUSICBRAINZ_ALBUMTYPE"       => TagFieldNames.MusicBrainzReleaseType,
+			"RELEASECOUNTRY"              => TagFieldNames.MusicBrainzReleaseCountry,
+			_                             => null,
+		};
 
 		#endregion
 	}
