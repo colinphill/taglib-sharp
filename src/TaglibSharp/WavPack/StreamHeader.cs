@@ -28,6 +28,7 @@
 
 using System;
 using System.Globalization;
+using System.Reflection;
 
 namespace TagLib.WavPack
 {
@@ -182,6 +183,9 @@ namespace TagLib.WavPack
 				out is_dsd,
 				out dsdshift);
 
+			if (extended_sample_rate == 0)
+				extended_sample_rate = (int)sample_rates[(int)((flags & SRATE_MASK) >> SRATE_LSB)];
+
 			if (is_dsd) {
 				samples <<= 3;
 				extended_sample_rate <<= 3 + dsdshift;
@@ -260,8 +264,7 @@ namespace TagLib.WavPack
 		/// </value>
 		public int AudioSampleRate {
 			get {
-				int index = (int)((flags & SRATE_MASK) >> SRATE_LSB);
-				return index == SRATE_EXTENDED ? extended_sample_rate : (int)sample_rates[index];
+				return extended_sample_rate;
 			}
 		}
 

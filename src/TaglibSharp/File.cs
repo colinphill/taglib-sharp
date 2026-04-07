@@ -1307,7 +1307,7 @@ namespace TagLib
 					return file;
 			}
 
-			if (!IsSupportedFile(abstraction))
+			if (!FileTypes.AvailableTypes.ContainsKey(mimetype))
 				throw new UnsupportedFormatException (
 					string.Format (CultureInfo.InvariantCulture, "{0} ({1})", abstraction.Name, mimetype));
 
