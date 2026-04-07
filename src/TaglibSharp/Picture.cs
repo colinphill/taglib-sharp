@@ -28,6 +28,7 @@
 //
 
 using System;
+using System.IO;
 
 namespace TagLib
 {
@@ -214,6 +215,25 @@ namespace TagLib
 		///    data stored in the current instance.
 		/// </value>
 		ByteVector Data { get; set; }
+
+		/// <summary>
+		///    Opens the picture data as a <see cref="TagLib.Image.File" />
+		///    so that image-specific metadata (e.g. EXIF, IPTC, XMP) can
+		///    be read or written.
+		/// </summary>
+		/// <returns>
+		///    A <see cref="TagLib.Image.File" /> instance backed by the
+		///    bytes in <see cref="Data" />.
+		/// </returns>
+		/// <exception cref="UnsupportedFormatException">
+		///    The MIME type of the picture does not correspond to a
+		///    supported image format.
+		/// </exception>
+		TagLib.Image.File AsImage ()
+		{
+			var abstraction = new ByteVectorFileAbstraction (Data, MimeType);
+			return (TagLib.Image.File)File.Create (abstraction, MimeType, ReadStyle.Average);
+		}
 	}
 
 	/// <summary>
@@ -625,5 +645,29 @@ namespace TagLib
 		}
 
 		#endregion
+	}
+
+	/// <summary>
+	///    An <see cref="File.IFileAbstraction" /> that exposes a
+	///    <see cref="ByteVector" /> as a read-only in-memory stream.
+	///    Used by <see cref="IPicture.AsImage" />.
+	/// </summary>
+	internal sealed class ByteVectorFileAbstraction : File.IFileAbstraction
+	{
+		readonly byte[] data;
+
+		public ByteVectorFileAbstraction (ByteVector data, string mimeType)
+		{
+			this.data = data?.Data ?? Array.Empty<byte> ();
+			Name = mimeType ?? string.Empty;
+		}
+
+		public string Name { get; }
+
+		public Stream ReadStream => new MemoryStream (data, writable: false);
+
+		public Stream WriteStream => throw new NotSupportedException ("Picture data is read-only via AsImage().");
+
+		public void CloseStream (Stream stream) => stream?.Dispose ();
 	}
 }
